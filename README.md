@@ -19,6 +19,6 @@ Extra files (in `./Dissertation`)
 
 Feel free to reuse any LaTeX code in this project, although be warned that it is a little hacky at times. 
 
-Enjoy,
+Enjoy,\
 Dylan :P 
 
