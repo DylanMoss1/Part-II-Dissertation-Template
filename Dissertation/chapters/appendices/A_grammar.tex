@@ -1,0 +1,89 @@
+\label{sec:A}
+
+Kautuka is a sequential imperative language defined by the following grammar. Note that this grammar consists of \textit{expressions}, \textit{commands}, and \textit{structures}, and does not make the simplifying assumption to treat commands and structures as unit-type expressions. In Kautuka, semicolons are interchangeable with newline characters.
+
+
+\begin{fleqn}
+        \begin{align*}
+                 & \textit{pkg} &  & \hspace*{-4cm}\text{package name}  &  & \\
+                 & \textit{fn}  &  & \hspace*{-4cm}\text{function name} &  & \\
+                 & x            &  & \hspace*{-4cm}\text{variable name} &  & \\
+                 & n            &  & \hspace*{-4cm}\text{integer}       &  & \\
+                 & b            &  & \hspace*{-4cm}\text{boolean}       &  & \\
+                 & s            &  & \hspace*{-4cm}\text{string}        &  & \\
+        \end{align*}
+
+
+        \vspace{-0.3cm}
+
+        \begin{align*}
+                 & \textit{program} \hspace{-0.1cm} & :: & =                                                                                                                                                                &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{package} \ \textit{pkg}; \ \textit{func}_1; \, \ldots \, ; \ \textit{func}_n; \ \textbf{func main()} \{ \textit{struct} \, \}                    &  &                                    \\
+                 & \hspace{-0.1cm}                  &    &                                                                                                                                                                  &  &                                    \\
+                 & \textit{func}    \hspace{-0.1cm} & :: & =                                                                                                                                                                &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{func } \textit{fn} \, (x_1: \tau_1, \ldots, x_n: \tau_n ) \: \tau \: \{ \textit{struct} \, \}                                                    &  &                                    \\
+                 & \hspace{-0.1cm}                  &    &                                                                                                                                                                  &  &                                    \\
+                 & \tau             \hspace{-0.1cm} & :: & =                                                                                                                                                                &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textit{int}                                                                                                                                             &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textit{bool}                                                                                                                                            &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textit{string}                                                                                                                                          &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ /\!\!* \, epsilon \, *\!\!/                                                                                                                              &  & \hspace*{2cm}\text{Unit type}      \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textit{file}                                                                                                                                            &  & \hspace*{2cm}\text{File reference} \\
+                 & \hspace{-0.1cm}                  &    &                                                                                                                                                                  &  &                                    \\
+                 & \textit{struct} \hspace{-0.1cm}  & :: & =                                                                                                                                                                &  & \hspace*{2cm}\text{Structure}      \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{if} \ e \, \{ \textit{struct} \, \}                                                                                                              &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{if} \ e \, \{ \textit{struct}_1 \, \} \textbf{ else } \{ \textit{struct}_2 \, \}                                                                 &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{if} \ e_1 \, \{ \textit{struct}_1 \, \} \textbf{ else if } e_2 \, \{ \textit{struct}_2 \, \} \ldots \, \textbf{else } \{ \textit{struct}_n \, \} &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{for} \ x := e_1; \, x < e_2; \, x \! + \! + \; \{ \textit{struct} \, \}                                                                          &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{for} \ x := \textbf{range} \ e \: \{ \textit{struct} \,  \}                                                                                      &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \{ \textit{struct} \, \}                                                                                                                                 &  & \hspace*{2cm}\text{Code block}     \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textit{struct}_1; \, \textit{struct}_2                                                                                                                  &  &                                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textit{command}_1; \, \ldots \, ; \textit{command}_n                                                                                                    &  &                                    \\
+        \end{align*}
+
+        \begin{align*}
+                 & \textit{command} \hspace{-0.1cm} & :: & =                                     &  &                                                        \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ x := e                        &  & \hspace*{5.6cm}\text{Declaration (with assignment)}    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{var} \ x              &  & \hspace*{5.6cm}\text{Declaration (without assignment)} \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{var} \ x \ \tau       &  & \hspace*{5.6cm}\text{Declaration (with explicit type)} \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ x = e                         &  & \hspace*{5.6cm}\text{Assignment}                       \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textit{fn}(e_1, \ldots, e_n) &  & \hspace*{5.6cm}\text{Call (user-defined) func}         \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textbf{return} \ e           &  & \hspace*{5.6cm}\text{Return expr from func}            \\
+                 &                                  &    & | \ \ \ \textbf{print}(e)             &  & \hspace*{5.6cm}\text{Console print}                    \\
+                 &                                  &    & | \ \ \ \textbf{write}(e_1, e_2)      &  & \hspace*{5.6cm}\text{File write (overwrite contents)}  \\
+                 &                                  &    & | \ \ \ \textbf{append}(e_1, e_2)     &  & \hspace*{5.6cm}\text{File append}                      \\
+                 & \hspace{-0.1cm}                  &    &                                       &  &                                                        \\
+                 & \textit{e} \hspace{-0.1cm}       & :: & =                                     &  &                                                        \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ \textit{unop } e              &  &                                                        \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ e_1 \textit{ binop } e_2      &  &                                                        \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ n                             &  & \hspace*{5.6cm}\text{Integer}                          \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ b                             &  & \hspace*{5.6cm}\text{Boolean}                          \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ s                             &  & \hspace*{5.6cm}\text{String literal}                   \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ x                             &  & \hspace*{5.6cm}\text{Variable read}                    \\
+                 & \hspace{-0.1cm}                  &    & | \ \ \ (e)                           &  &                                                        \\
+                 &                                  &    & | \ \ \ \textbf{input}(n)             &  & \hspace*{5.6cm}\text{Console input (lower bound)}      \\
+                 &                                  &    & | \ \ \ \textbf{input}(n_1, n_2)      &  & \hspace*{5.6cm}\text{Console input (both bounds)}      \\
+                 &                                  &    & | \ \ \ \textbf{open}(e)              &  & \hspace*{5.6cm}\text{File open (unspecified group)}    \\
+                 &                                  &    & | \ \ \ \textbf{open}(e, n)           &  & \hspace*{5.6cm}\text{File open (specified group)}      \\
+                 &                                  &    & | \ \ \ \textbf{read}(e, n)           &  & \hspace*{5.6cm}\text{File read (lower bound)}          \\
+                 &                                  &    & | \ \ \ \textbf{read}(e, n_1, n_2)    &  & \hspace*{5.6cm}\text{File read (both bounds)}          \\
+                 &                                  &    &                                       &  &                                                        \\
+                 & \textit{unop}\hspace{-0.1cm}     & :: & =                                     &  &                                                        \\
+                 &                                  &    & | \ \ \ !                             &  & \hspace*{5.6cm}\text{Not}                              \\
+                 &                                  &    & | \ \ \ -                             &  & \hspace*{5.6cm}\text{Negation}                         \\
+                 &                                  &    &                                       &  &                                                        \\
+                 & \textit{binop}\hspace{-0.1cm}    & :: & =                                     &  &                                                        \\
+                 &                                  &    & | \ \ \ +                             &  & \hspace*{5.6cm}\text{Addition}                         \\
+                 &                                  &    & | \ \ \ *                             &  & \hspace*{5.6cm}\text{Multiplication}                   \\
+                 &                                  &    & | \ \ \ -                             &  & \hspace*{5.6cm}\text{Subtraction}                      \\
+                 &                                  &    & | \ \ <                               &  & \hspace*{5.6cm}\text{Less than}                        \\
+                 &                                  &    & | \ \ <=                              &  & \hspace*{5.6cm}\text{Less than equal}                  \\
+                 &                                  &    & | \ \ >                               &  & \hspace*{5.6cm}\text{Greater than}                     \\
+                 &                                  &    & | \ \ >=                              &  & \hspace*{5.6cm}\text{Greater than equal}               \\
+                 &                                  &    & | \ \ ==                              &  & \hspace*{5.6cm}\text{Equal}                            \\
+                 &                                  &    & | \ \ \ !=                            &  & \hspace*{5.6cm}\text{Not equal}                        \\
+                 &                                  &    & | \ \ \ \&\&                          &  & \hspace*{5.6cm}\text{And}                              \\
+                 &                                  &    & | \ \ \ | |                           &  & \hspace*{5.6cm}\text{Or}                               \\
+        \end{align*}
+
+\end{fleqn}

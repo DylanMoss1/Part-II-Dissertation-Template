@@ -1,0 +1,382 @@
+\label{sec:C}
+
+\section*{Cost Definitions}
+
+In this section, we provide a full description of the \textit{dependent cost calculus}: the representation of costs in Kautuka which depend on unknown input sizes. The theoretical definitions mirror my code implementation.
+
+The set \( \textit{Var} \) contains all program variables, specifically referring to \textit{function inputs} in this context. When evaluated (dynamically), the value of a variable is its \textit{size}. Exponentiated variables are represented with the set \( \textit{Exp\text{-}Var} = \mathit{Var} \times \mathbb{N} \), noting that exponents are constrained to \textit{integers}\footnote{The language does not contain exponentiation operators, and we assume that loops do not produce exponential behaviour (section \hyperref[sec:2.5.1]{2.5.1}).}. This set contains elements of the form \( (x, n) \), representing exponentiated variables \( x^n \). \textit{Variable terms} are the product of an arbitrary number of integers and variables, and are written in the form \( i \cdot x^m y^n \cdots z^p \) (where \(i, m, n, \ldots, p \in \mathbb{N} \) and \(x, y, \ldots, z \in \textit{Var} \)). This set is defined as \( {\mathit{Var\text{-}Term} = \mathbb{N} \times \mathscr{P}(\mathit{Exp\text{-}Var})} \). These terms are summed to produce \textit{polynomial terms} (\( \mathscr{P}(\mathit{Var\text{-}Term}) \)) of the form \( i \cdot {w^m} \cdots {x^n} + \cdots + j \cdot {y^p} \cdots {z^q} \). Note that this is simply a set-theoretical definition of \textit{polynomial expressions}. In our language, polynomial terms are sufficient to describe all costs. A cost bound can be constructed with two polynomial terms (\( \mathit{Poly\text{-}Term}    \times \mathit{Poly\text{-}Term} \)), representing the upper and lower bounds: \( { \bound{\textit{lower\_cost}}{\textit{upper\_cost}} } \). So a cost bound \( \bound{l}{u} \) contains the two \textit{polynomial terms} \( l \) and \( u \).
+
+
+
+\begin{align*}
+  \mathit{Var}               & = \{x, y, z, \ldots \}                                          & x                                                                \\
+  \mathit{Exp\text{-}Var}    & = \mathit{Var}\times \mathbb{N}                                 & x^n                                                              \\
+  \mathit{Var\text{-}Term}   & = \mathbb{N} \times \mathscr{P}(\mathit{Exp\text{-}Var})        & i \cdot x^m y^n \cdots z^p                                       \\
+  \mathit{Poly\text{-}Term}  & = \mathscr{P}(\mathit{Var\text{-}Term})                         & i \cdot {w^m} \cdots {x^n} + \cdots + j \cdot {y^p} \cdots {z^q} \\
+  \mathit{Cost\text{-}Bound} & = \mathit{Poly\text{-}Term}    \times \mathit{Poly\text{-}Term} & \bound{\textit{lower\_cost}}{\textit{upper\_cost}}
+\end{align*}
+
+\section*{Cost Operations}
+
+Given two polynomial terms \( p_1 \) and \( p_2 \), we can perform the following operations: \( {(p_1 + p_2)}, \, {(p_1 - p_2)}, \, {(p_1 \cdot p_2)}, \, {\max(p_1, p_2)}, \, {\min(p_1, p_2)} \).
+
+Two \textit{variable terms} are considered to be \textit{matching} if they contain the same variables with the same exponents (but potentially differing integer coefficients). The operations \( {(p_1 + p_2)}, {(p_1 - p_2)}, {(p_1 \cdot p_2)} \) are defined as expected (treating the polynomial terms as if they were polynomial expressions). For example, \( (8x + 3xy^2) + (3x + 2x^2) = 11x + 3xy^2 + 2x^2 \) and \( (2x + 1) \cdot (3y) = 6xy + 3y\). This is implemented as follows:
+
+When adding \( p_1 + p_2 \), we join together variable terms containing the same variables (for example \( 3xy + 5xy \) becomes \( 8xy \)). This is implemented by scanning all variable terms in \( p_1 \) and \( p_2 \) and checking if they are matching. If they are, then we decompose the variable terms into their constituent parts: the variables \( w^m \cdots x^n \) (shared between the terms) and the two coefficients of each term \( i_1 \) and \( i_2 \). We add \( (i_1 + i_2) \cdot w^m \cdots x^n \) to the total (initially 0). Once we have identified all matching pairs, we then add all remaining variable terms in \( p_1 \) and \( p_2 \) to the result. Algorithm \hyperref[alg:two]{2} presents an algorithm to implement this.
+
+\begin{algorithm}[hbt!]
+  \caption{Addition of Polynomial Terms}\label{alg:two}
+  \KwData{\( p_1, p_2 \)}
+  \KwResult{\( p \)}
+
+  \BlankLine
+
+  \( p \gets 0 \)\;
+
+  \BlankLine
+
+  \For{\((i \cdot w^m \cdots x^n) \in p_1\)} {
+
+    \BlankLine
+
+    \( \textit{found\_matching} \gets \textit{false} \)\;
+
+    \BlankLine
+
+    \For{\((j \cdot y^p \cdots z^q) \in p_2\)} {
+      \If{\text{is\_matching}\(( (i \cdot w^m \cdots x^n), (j \cdot y^p \cdots z^q) )\)}{
+        \( p \gets p \cup \{ ((i + j) \cdot w^m \cdots x^n) \} \)\;
+        \( p_2 \gets p_2 \backslash \{ (j \cdot y^p \cdots z^q) \} \)\;
+        \( \textit{found\_matching} \gets \textit{true} \)\;
+      }
+    }
+    \If{\(\lnot \textit{found\_matching} \)} {
+      \( p \gets p \cup \{ (i \cdot w^m \cdots x^n) \} \)\;
+    }
+  }
+
+  \( p \gets p \cup p_2 \)\;
+
+\end{algorithm}
+
+Subtraction follows similarly, where we instead add \( ((i - j) \cdot w^m \cdots x^n) \) to the result.
+
+The multiplication of two \textit{variable terms} \( v_1 \cdot v_2 \) is defined as multiplying their coefficients and unioning their exponentiated variables. However, if any of the variables in \( v_1 \) and \( v_2 \) match, then their exponents are added together during this process. This allows us to define the multiplication of two polynomial terms \( p_1 \cdot p_2 \): for all \( v_1 \in p_1 \) and \( v_2 \in p_2 \), we add \( v_1 \cdot v_2 \) to an initially empty result.
+
+The minimum and maximum of two polynomial terms are defined conservatively. We say that the maximum of two different unknown variables \( x \) and \( y \) is \( x + y \). But if two variable terms contain the same variables (and exponents) then we simply take the maximum of the coefficients, \( {\max(3xy^2 + 2x, 2xy^2 + 4y) = 3xy^2 + 2x + 4y} \).
+
+However, finding the minimum of two abstract terms is not possible with our current calculus. Taking \( x - y \) does not work as we cannot ensure that the result is non-negative. One approach to this problem would be to add the \( \min \) operator into the calculus, however extending the calculus in this way is outside the scope of this project. Another solution would be to approximate the minimum with an average of the two inputs, however our calculus only supports integers (and does not support rounding operations). Hence, we opt for an even cruder approach of approximating the minimum of two variables. We apply the same approach as calculating the maximum, however we take the minimum of coefficients rather than the maximum, \( {\min(3xy^2 + 2x, 2xy^2 + 2x + 4y) = 2xy^2 + 2x + 4y} \). While this is not an accurate approximation, it does ensure that the result is always positive and is more meaningful than just returning \( 0 \). Surprisingly, the inaccuracy of this bound does not have a large impact overall (as shown by the results of section \hyperref[sec:4.2]{4.2}). The purpose of these bounds are to approximate the \textit{magnitude} of costs, rather than to produce accurate estimates. This approach succeeds in that goal, however it is possible to construct adversarial inputs where this approach fails to produce reasonable estimates. We discuss the alternative approaches in further detail in section \hyperref[sec:5.2]{5.2}.
+
+From these operations, we can define the cost definitions presented in the section \hyperref[sec:3.5.1]{3.5.1}:
+
+\begin{align*}
+  c_1 + c_2         & \triangleq \bound{l_1 + l_2}{u_1 + u_2}               \\
+  c_1 \cdot c_2     & \triangleq \bound{l_1 \cdot l_2}{u_1 \cdot u_2}       \\
+  c_1 \cup c_2      & \triangleq \bound{\min{(l_1, l_2)}}{\max{(u_1, u_2)}} \\
+  c_1 - c_2         & \triangleq \bound{l_1 - u_2}{u_1 - l_2}               \\
+  c_1 \dotminus c_2 & \triangleq \bound{l_1 - l_2}{u_1 - u_2}               \\
+\end{align*}
+
+Section \hyperref[sec:3.5.1]{3.5.1} claims that: setting the type cost of an iterator variable \( i \) to the bound representing its range encapsulates all behaviour of a loop, even for variable values within the bound. We justify this with a proof which shows that all defined cost operations satisfy the following property: if \( c_1 \subseteq c_2 \), that is all values in the bound \( c_1 \) are contained within the bound \( c_2 \), then \( (c_1 \oplus c) \subseteq (c_2 \oplus c) \) for operators \( \oplus \in \{ +, \cdot, \cup, -, \dotminus \}\). This shows us that if operators are applied to both a value \( v \) (represented with the bound \( \bound{v}{v} \)) and a range \( c \) encapsulating that value, then the value can never exceed the bound --- hence the bound encapsulates all behaviour of the value. Note that we treat \( v \) as the bound \( \bound{v}{v} \) as these operators are only defined on cost bounds.
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+
+\renewcommand\qedsymbol{}
+
+\begin{theorem}
+  \( c_1 \subseteq c_2 \implies (c_1 \oplus c) \subseteq (c_2 \oplus c) \) for all operators \( \oplus \in \{ +, \cdot, \cup, -, \dotminus \}\). Where \( \bound{l_1}{u_1} \subseteq \bound{l_2}{u_2} \iff l_1 \geq l_2 \land u_1 \leq u_2 \).
+\end{theorem}
+
+\begin{proof}
+  Proof by Exhaustion:
+
+  Let us define \( c_1 = \bound{l_1}{u_1}, c_2 = \bound{l_2}{u_2}, c = \bound{l}{u} \).
+
+  \textbf{Case} (\(+\)):
+  \begin{align*}
+    c_1 \subseteq c_2 & \; = \hspace{4.5mm} \bound{l_1}{u_1} \subseteq \bound{l_2}{u_2}      \\
+                      & \implies l_1 \geq l_2 \land u_1 \leq u_2                             \\
+                      & \implies l_1 + l \geq l_2 + l \land u_1 + u \leq u_2 + u             \\
+                      & \implies \bound{l_1 + l}{u_1 + u} \subseteq \bound{l_2 + l}{u_2 + u} \\
+                      & \; = \hspace{5mm} c_1 + c \subseteq c_2 + c
+  \end{align*}
+
+  \textbf{Cases} (\(\dotminus\)) and (\(\cdot\)) follow similar to above.
+
+  \textbf{Case} (\(\cup\)): 
+  
+  We note that \( l_1 \geq l_2 \implies \min(l_1, l) \geq \min(l_2, l) \). 
+  
+  If \( l_1 \leq l \), then \( l_2 \leq l_1 \leq l \), hence \( \min(l_1, l) = l \), \( \min(l_2, l) = l \) where \( l \geq l \) holds. 
+  
+  If \( l_1 \geq l \), then \( \min(l_1, l) = l_1 \geq l_2 \implies \min(l_1, l) \geq \min(l_2, l) \). 
+  
+  A similar logic can be used to prove \( u_1 \leq u_2  \implies \max(u_1, u) \leq \max(u_2, u) \). 
+  
+  \begin{align*}
+    c_1 \subseteq c_2 & \; = \hspace{4.5mm} \bound{l_1}{u_1} \subseteq \bound{l_2}{u_2}                          \\
+                      & \implies l_1 \geq l_2 \land u_1 \leq u_2                                                 \\
+                      & \implies \min(l_1, l) \geq \min(l_2, l) \land \max(u_1, u) \leq \max(u_2, u)             \\
+                      & \implies \bound{\min(l_1, l)}{\max(u_1, u)} \subseteq \bound{\min(l_2, l)}{\max(u_2, u)} \\
+                      & \; = \hspace{5mm} c_1 \cup c \subseteq c_2 \cup c
+  \end{align*}
+
+  Case (\(-\)):
+  \begin{align*}
+    c_1 \subseteq c_2 & \; = \hspace{4.5mm} \bound{l_1}{u_1} \subseteq \bound{l_2}{u_2}      \\
+                      & \implies l_1 \geq l_2 \land u_1 \leq u_2                             \\
+                      & \implies l_1 - u \geq l_2 - u \land u_1 - l \leq u_2 - l             \\
+                      & \implies \bound{l_1 - u}{u_1 - l} \subseteq \bound{l_2 - u}{u_2 - l} \\
+                      & \; = \hspace{5mm} c_1 - c \subseteq c_2 - c
+  \end{align*}
+\end{proof}
+
+
+\section*{Typing Judgement}
+
+The type-cost system typing judgement takes the form:
+
+\[ \Gamma^\textrm{cost} \vdash e : \tau^\textrm{cost} \]
+
+where
+
+\vspace{3mm}
+
+\( \tau^\textrm{cost} \): type costs (unsized or quantified types)
+
+\( \Gamma^\textrm{cost} \): mapping from variables to \( \tau^\textrm{cost} \)
+
+\section*{Typing Rules}
+
+\vspace{-3mm}
+
+The following section lists the typing rules for the type-cost system which have not previously been mentioned throughout the dissertation. For brevity, we write \( \tau^\textrm{cost} \) as \( \tau \) and \( \Gamma^\textrm{cost} \) as \( \Gamma \).
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}(c_1)\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}(c_2)\)}
+    \RightLabel{\( ( < ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 < e_2 : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}(c_1)\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}(c_2)\)}
+    \RightLabel{\( ( \le ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 <= e_2 : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{4mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}(c_1)\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}(c_2)\)}
+    \RightLabel{\( ( > ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 > e_2 : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}(c_1)\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}(c_2)\)}
+    \RightLabel{\( ( \ge ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 >= e_2 : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{4mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}(c_1)\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}(c_2)\)}
+    \RightLabel{\( ( = ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 == e_2 : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}(c_1)\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}(c_2)\)}
+    \RightLabel{\( ( \ne ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 \: !\!= e_2 : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{4mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{bool}\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{bool}\)}
+    \RightLabel{\( (\land) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 \: \&\& \: e_2 : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{bool}\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{bool}\)}
+    \RightLabel{\( (\lor) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 \: || \: e_2 : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{4mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e : \textit{bool}\)}
+    \RightLabel{\( (\neg) \)}
+    \UnaryInfC{\(\Gamma \vdash \: ! e : \textit{bool}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e : \tau \)}
+    \RightLabel{\((\emph{paren})\)}
+    \UnaryInfC{\(\Gamma \vdash ( e ) : \tau \)}
+  \end{prooftree}
+\end{minipage}
+
+% x, =, :=, (_ = e)
+
+\vspace{4mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \vspace{3.5mm}
+  \begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{var-read})\)}
+    \UnaryInfC{\(\Gamma[x : \tau] \vdash x : \tau \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \tau_1 \)}
+    \AxiomC{\((x: \tau_1), \Gamma \vdash e_2 : \tau_2 \)}
+    \RightLabel{\((\emph{var-declare})\)}
+    \BinaryInfC{\(\Gamma \vdash x := e_1; \, e_2 : \tau_2 \)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{-3mm}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \tau_1 \)}
+  \AxiomC{\((x: \tau_1), \Gamma \vdash e_2 : \tau_2 \)}
+  \RightLabel{\((\emph{var-assign})\)}
+  \BinaryInfC{\(\Gamma[x : \tau_1] \vdash x = e_1; \, e_2 : \tau_2 \)}
+\end{prooftree}
+
+% (e1; e2), {}  
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{unit} \) }
+    \AxiomC{\( \Gamma \vdash e_2 : \tau \) }
+    \RightLabel{\((\emph{seq})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1; e_2 : \tau \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e : \textit{unit}\)}
+    \RightLabel{\((\emph{block})\)}
+    \UnaryInfC{\(\Gamma \vdash \{ e \} : \textit{unit} \)}
+  \end{prooftree}
+\end{minipage}
+
+% if, if-else, for-loop, for-each 
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{bool} \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{unit} \)}
+  \RightLabel{\((\emph{if}\, \footnotemark{})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{if } e_1 \; \{ \, e_2 \, \} : \textit{unit} \)}
+\end{prooftree}
+
+
+\addtocounter{footnote}{-1}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{string}(c) \)}
+  \AxiomC{\( (x: \textit{string}\bound{1}{1}), \Gamma \vdash e_2 : \textit{unit} \)}
+  \RightLabel{\((\emph{for-each}\footnotemark{})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{for } x := \text{range } e_1 \, \{ \, e_2 \, \} : \textit{unit} \)}
+\end{prooftree}
+
+\addtocounter{footnote}{-1}
+
+\stepcounter{footnote}\footnotetext{Where modification are made to the resultant \( \Gamma \), as described in section \hyperref[3.5.1]{3.5.1}.}
+
+
+% print, input-1, input-2, open, read, write, append 
+
+\vspace{-1mm}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e : \textit{string}(c) \)}
+  \RightLabel{\((\emph{print})\)}
+  \UnaryInfC{\(\Gamma \vdash \textrm{print}(e) : \textit{unit} \)}
+\end{prooftree}
+
+
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}(c) \)}
+    \RightLabel{\((\emph{open-1})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{open}(e) : \textit{file\_ref}\,(i', g') \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}(c) \)}
+    \AxiomC{\( \Gamma \vdash n : \textit{int}\bound{n}{n} \)}
+    \RightLabel{\((\emph{open-2})\)}
+    \BinaryInfC{\(\Gamma \vdash \textrm{open}(e, n) : \textit{file\_ref}\,(i', n) \)}
+  \end{prooftree}
+\end{minipage}
+
+
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{file\_ref}\,(i, g) \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{string}(c) \)}
+  \RightLabel{\((\emph{file-write})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{write}(e_1, e_2) : \textit{unit} \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{file\_ref}\,(i, g) \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{string}(c) \)}
+  \RightLabel{\((\emph{file-append})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{append}(e_1, e_2) : \textit{unit} \)}
+\end{prooftree}
+
+% func-def, func-call, return
+
+\vspace{-1mm}
+
+\hspace*{-1.9cm}\begin{minipage}{1.0\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(x_1: \tau_1, \, \ldots \,, x_n : \tau_n, \Gamma \vdash e : \tau_\textrm{unsized} \)}
+    \AxiomC{\((g: (x_1 : \tau_1^\textrm{base}) * \cdots * (x_n : \tau_n^\textrm{base}) \rightarrow \tau_\textrm{unsized}), \Gamma \vdash e^\prime : \tau^\prime \)}
+    \RightLabel{\((\emph{def-func-1})\)}
+    \BinaryInfC{\(\Gamma \vdash (\textrm{def } g(x_1: \tau_1, \, \ldots \, , x_n: \tau_n) \; \tau \; \{ \, e \, \} ; \, e^\prime) : \tau^\prime \)}
+  \end{prooftree}
+\end{minipage}%
+
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash g : (x_1 : \tau_1^\textrm{base}) * \cdots * (x_n : \tau_n^\textrm{base}) \rightarrow \tau_\textrm{unsized}\)}
+  \AxiomC{\( \Gamma \vdash e_1 : \tau_1 \hspace{5mm} \cdots \hspace{5mm} \Gamma \vdash e_n : \tau_n \)}
+  \RightLabel{\((\emph{apply-func-1})\)}
+  \BinaryInfC{\( \Gamma \vdash g(e_1, \ldots, e_n) : \tau_\textrm{unsized} \)}
+\end{prooftree}

@@ -1,0 +1,356 @@
+\label{sec:D}
+
+\section*{Static Profiling}
+
+Some operations (such as addition) take practically no time to execute, no matter the input size. We estimate their execution time to be \( 1 ns \), which is negligible compared to the operations we are interested in (with execution times of order \( 1 \mu s \)). However, we do not give them an execution time of \( 0 ns \), as if these instructions are repeated many times (for example in deeply nested loops) their effect may become noticeable. These entries are marked as NEGL in table \hyperref[table:runtime]{D.1}.
+
+I measured runtimes for each instruction, repeating the experiments 1000 times and calculating the average. For those instructions containing sized inputs, I varied the input size from \( 1 \) to \( 200,000 \) and calculated the results for each. By plotting the relationship between input size and runtime using Python's \texttt{matplotlib}, I was able to determine the relationship between these variables: which in all cases was either constant or linear. For all linear relationships, I used \texttt{sklearn} to train a linear regression model on the data to extract its model parameters. The results of this analysis can be seen in the table below: 
+
+\vspace{3mm}
+
+\begin{figure}[!h]
+  \begin{tabular}{cc}
+    \hline
+    Instruction          & Runtime \( ns \) \\
+    \hline
+    ADD(\(c_1, c_2\))    & NEGL             \\
+    MULT(\(c_1, c_2\))   & NEGL             \\
+    SUB(\(c_1, c_2\))    & NEGL             \\
+    CONCAT(\(c_1, c_2\)) & NEGL             \\
+    LT()                 & NEGL             \\
+    LE()                 & NEGL             \\
+    GT()                 & NEGL             \\
+    GE()                 & NEGL             \\
+    EQUIV()              & NEGL             \\
+    NE()                 & NEGL             \\
+    AND()                & NEGL             \\
+    OR()                 & NEGL             \\
+    NOT()                & NEGL             \\
+  \end{tabular}
+  \quad
+  \hspace*{0.4cm}\begin{tabular}{cc}
+    \hline
+    Instruction                          & Runtime \( ns \)             \\
+    \hline
+    VAR\_READ()                          & NEGL                         \\
+    VAR\_DECLARE()                       & NEGL                         \\
+    VAR\_ASSIGN()                        & NEGL                         \\
+    IF()                                 & NEGL                         \\
+    FOR\_LOOP()                          & \( 34 \)                     \\
+    FOR\_EACH(\( c \))                   & \( 11.7656c +  4.4181 \)     \\
+    PRINT(\( c \))                       & \( 0.2118c + 486.8636\)      \\
+    INPUT(\( c_1, c_2 \))\footnotemark{} & \( 3{\times}10^9\)           \\
+    FILE\_OPEN()                         & \( 4285 \)                   \\
+    FILE\_READ(\( c \))                  & \( 0.7596c + 78047.7545 \)   \\
+    FILE\_WRITE(\( c \))                 & \( 2.8451c + 1410315.1545 \) \\
+    FILE\_APPEND(\( c \))                & \( 2.3044c + 1310741.9063 \) \\
+    FUNC\_CALL()                         & 5                            \\
+  \end{tabular}
+  \label{table:runtime}
+  \caption{Instruction runtime estimates measured on my machine.}
+\end{figure}
+
+\addtocounter{footnote}{-1}
+\stepcounter{footnote}\footnotetext{Modelled as a constant time of \( 3s \). It is impossible to estimate how long this will be, \( 3s \) was an arbitrarily picked value of the right order of magnitude.}
+
+We unusually treat the initialisation of the \textit{for-each} structure as being dependent on the number of loop iterations. \textit{For-each} loops in Go produce iterator variables of type \textit{rune}. However, Kautuka only supports \textit{strings}, so each loop is required to cast the iterator from a \textit{rune} to a \textit{string}. This takes non-negligible time, proportional to the number of loops performed. 
+
+Our linear models above produce float results, however our cost calculus only supports integers. We substitute the integer input sizes into the models, and round the result to the nearest integer. This allows us to produce more accurate estimates than if the model was constrained to only integer parameters (as the gradient is often very small). 
+
+The extra cost of parallelisation came to: \( 257.1065n + 674.2374 \) where \( n \) is the number of blocks to be parallelised.
+
+
+\section*{Typing Judgement}
+
+The runtime-cost system typing judgement takes the form:
+
+\[ \Gamma^\textrm{run} \vdash e : \tau^\textrm{run}, r \]
+
+where
+
+\vspace{3mm}
+
+\( \tau^\textrm{run} \): type costs with latent runtime costs
+
+\( r \in \textit{Cost\text{-}Bound} \): runtime cost bound
+
+\( \tau^\textrm{run}, r \): representation of immediate and latent runtime costs
+
+\( \Gamma^\textrm{run} \): mapping from variables to \( \tau^\textrm{run} \)
+
+\section*{Typing Rules}
+
+\vspace{-3mm}
+
+The following section lists the typing rules for the runtime-cost system which have not previously been mentioned throughout the dissertation. For brevity, we write \( \tau^\textrm{run} \) as \( \tau \) and \( \Gamma^\textrm{run} \) as \( \Gamma \).
+
+Note that the runtime-cost function for structures (e.g. IF(), FOR\_LOOP(), etc.) refers to the runtime cost for initialising the structure, not the runtime of the structure itself.
+
+\vspace{5mm}
+
+% int, bool, string 
+
+\hspace*{-1.5cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{int}\,\footnotemark{})\)}
+    \UnaryInfC{\(\Gamma \vdash n : \textit{int}\bound{n}{n}, 0\)}
+  \end{prooftree}
+  \addtocounter{footnote}{-1}
+\end{minipage}%
+\hspace*{-1cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{bool}\,\footnotemark{})\)}
+    \UnaryInfC{\(\Gamma \vdash b : \textit{bool}, 0 \)}
+  \end{prooftree}
+  \addtocounter{footnote}{-1}
+\end{minipage}
+\hspace*{-1cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\text{len}(s) = n\)}
+    \RightLabel{\((\emph{string}\,\footnotemark{})\)}
+    \UnaryInfC{\(\Gamma \vdash s : \textit{string}\bound{n}{n}, 0 \)}
+  \end{prooftree}
+  \addtocounter{footnote}{-1}
+\end{minipage}
+
+\vspace{-2mm}
+
+\stepcounter{footnote}\footnotetext{We assume that initialising values (which are known at compile time), has no cost.}
+
+
+% add, multiply, subtract, concat, () 
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1), r_1 \)}
+  \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2), r_2 \)}
+  \RightLabel{\((\emph{sub})\)}
+  \BinaryInfC{\(\Gamma \vdash e_1 - e_2 : \textit{int}(c_1 - c_2), r_1 + r_2 + \text{SUB}(c_1, c_2) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{string}(c_1), r_1 \)}
+  \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{string}(c_2), r_2 \)}
+  \RightLabel{\((\emph{concat})\)}
+  \BinaryInfC{\(\Gamma \vdash e_1 + e_2 : \textit{string}(c_1 + c_2), r_1 + r_2 + \text{CONCAT}(c_1, c_2) \)}
+\end{prooftree}
+
+% lt, le, gt, ge, and, or, not, eq, neq, () 
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \textit{int}(c_1), r_1\)}
+  \AxiomC{\(\Gamma \vdash e_2 : \textit{int}(c_2), r_2\)}
+  \RightLabel{\( ( < ) \)}
+  \BinaryInfC{\(\Gamma \vdash e_1 < e_2 : \textit{bool}, r_1 + r_2 + \text{LT}(c_1, c_2)\)}
+\end{prooftree}
+
+\vspace{5mm}
+\newpage 
+
+Rules \( (\leq) \),\( (>) \),\( (\ge) \),\( (=) \),\( (\ne) \) follow similarly to \( (<) \).
+
+\vspace{5mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{bool}, r_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{bool}, r_2\)}
+    \RightLabel{\( (\land) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 \: \&\& \: e_2 : \textit{bool}, r_1 + r_2 + \text{AND()}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{bool}, r_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{bool}, r_2\)}
+    \RightLabel{\( (\lor) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 \: || \: e_2 : \textit{bool}, r_1 + r_2 + \text{OR()}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{4mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e : \textit{bool}, r\)}
+    \RightLabel{\( (\neg) \)}
+    \UnaryInfC{\(\Gamma \vdash \: ! e : \textit{bool}, r + \text{NOT}() \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.6cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e : \tau, r \)}
+    \RightLabel{\((\emph{paren})\)}
+    \UnaryInfC{\(\Gamma \vdash ( e ) : \tau, r \)}
+  \end{prooftree}
+\end{minipage}
+\hspace*{-0.8cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{var-read})\)}
+    \UnaryInfC{\(\Gamma[x : \tau] \vdash x : \tau, \text{VAR\_READ}() \)}
+  \end{prooftree}
+\end{minipage}
+
+% x, =, :=, (_ = e)
+
+\vspace{4mm}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \tau_1, r_1 \)}
+  \AxiomC{\((x: \tau_1), \Gamma \vdash e_2 : \tau_2, r_2 \)}
+  \RightLabel{\((\emph{var-declare})\)}
+  \BinaryInfC{\(\Gamma \vdash x := e_1; \, e_2 : \tau_2, r_1 + r_2 + \text{VAR\_DECLARE}() \)}
+\end{prooftree}
+
+\vspace{-3mm}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \tau_1, r_1 \)}
+  \AxiomC{\((x: \tau_1), \Gamma \vdash e_2 : \tau_2, r_2 \)}
+  \RightLabel{\((\emph{var-assign})\)}
+  \BinaryInfC{\(\Gamma[x : \tau_1] \vdash x = e_1; \, e_2 : \tau_2, r_1 + r_2 + \text{VAR\_ASSIGN}() \)}
+\end{prooftree}
+
+% (e1; e2), {}  
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e : \textit{unit}, r\)}
+    \RightLabel{\((\emph{block})\)}
+    \UnaryInfC{\(\Gamma \vdash \{ e \} : \textit{unit}, r \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-3.0cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{bool}, r_1 \)}
+    \AxiomC{\( \Gamma \vdash e_2 : \textit{unit}, \bound{l}{u} \)}
+    \RightLabel{\((\emph{if})\)}
+    \BinaryInfC{\(\Gamma \vdash \textrm{if } e_1 \; \{ \, e_2 \, \} : \textit{unit}, e_1 + \bound{0}{u} + \text{IF}() \)}
+  \end{prooftree}
+\end{minipage}
+
+
+% if, if-else, for-loop, for-each 
+
+
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{string}(c), r_1 \)}
+  \AxiomC{\( (x: \textit{string}\bound{1}{1}), \Gamma \vdash e_2 : \textit{unit}, r_2 \)}
+  \RightLabel{\((\emph{for-each})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{for } x := \text{range } e_1 \, \{ \, e_2 \, \} : \textit{unit}, r_1 + c \cdot r_2 + \text{FOR\_EACH}(c) \)}
+\end{prooftree}
+
+
+% print, input-1, input-2, open, read, write, append 
+
+\hspace*{-2.2cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}(c), r \)}
+    \RightLabel{\((\emph{print})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{print}(e) : \textit{unit}, r + \text{PRINT}(c) \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{ \( \Gamma \vdash n : \textit{int}\bound{n}{n}, 0 \) }
+    \RightLabel{\((\emph{input-1})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{input}(n) : \textit{string}\bound{0}{n}, \text{INPUT}(\bound{0}{n}) \)}
+  \end{prooftree}
+\end{minipage}
+
+\begin{prooftree}
+  \AxiomC{ \( \Gamma \vdash n_1 : \textit{int}\bound{n_1}{n_1}, 0 \) }
+  \AxiomC{ \( \Gamma \vdash n_2 : \textit{int}\bound{n_2}{n_2}, 0 \) }
+  \AxiomC{\( \hspace{-1.8mm}n_1 \leq n_2 \)}
+  \RightLabel{\((\emph{input-2})\)}
+  \TrinaryInfC{\(\Gamma \vdash \textrm{input}(n_1, n_2) : \textit{string}\bound{n_1}{n_2}, \text{INPUT}(\bound{n_1}{n_2}) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e : \textit{string}(c), r \)}
+  \RightLabel{\((\emph{open-1})\)}
+  \UnaryInfC{\(\Gamma \vdash \textrm{open}(e) : \textit{file\_ref}\,(i', g'), r + \text{FILE\_OPEN}() \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e : \textit{string}(c), r \)}
+  \AxiomC{\( \Gamma \vdash n : \textit{int}\bound{n}{n}, 0 \)}
+  \RightLabel{\((\emph{open-2})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{open}(e, n) : \textit{file\_ref}\,(i', n), r + \text{FILE\_OPEN}() \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash f : \textit{file\_ref}\,(i, g), r \)}
+  \AxiomC{\( \Gamma \vdash n : \textit{int}\bound{n}{n}, 0 \)}
+  \RightLabel{\((\emph{file-read-1})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{read}(f, n) : \textit{string}\bound{0}{n}, r + \text{FILE\_READ}(\bound{0}{n})\)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash f : \textit{file\_ref}\,(i, g), r \)}
+  \AxiomC{\( \Gamma \vdash n_1 : \textit{int}\bound{n_1}{n_1}, 0 \)}
+  \AxiomC{\( \Gamma \vdash n_2 : \textit{int}\bound{n_2}{n_2}, 0 \)}
+  \AxiomC{\( \hspace{-1.8mm}n_1 \leq n_2 \)}
+  \RightLabel{\((\emph{file-read-2})\)}
+  \QuaternaryInfC{\(\Gamma \vdash \textrm{read}(f, n_1, n_2) : \textit{string}\bound{n_1}{n_2}, r + \text{FILE\_READ}(\bound{n_1}{n_2})\)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{file\_ref}\,(i, g), r_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{string}(c), r_2 \)}
+  \RightLabel{\((\emph{file-write})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{write}(e_1, e_2) : \textit{unit}, r_1 + r_2 + \text{FILE\_WRITE}(c) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{file\_ref}\,(i, g), r_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{string}(c), r_2 \)}
+  \RightLabel{\((\emph{file-append})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{append}(e_1, e_2) : \textit{unit}, r_1 + r_2 + \text{FILE\_APPEND}(c) \)}
+\end{prooftree}
+
+% func-def, func-call, return
+
+
+\vspace{-1mm}
+
+\vspace{5mm}
+
+Let us say that expression \( e \) below returns expressions: \( \tau_\textrm{sized}(c_1), \ldots, \tau_\textrm{sized}(c_n) \).
+
+And \( \tau_\textrm{sized}(c) = \tau_\textrm{sized}(c_1) \cup \cdots \cup \tau_\textrm{sized}(c_n) \).
+
+\vspace{3mm}
+
+\((\emph{def-func-2})\):
+
+\hspace*{-2cm}\begin{minipage}{1.0\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(x_1: \tau_1(c_1), \ldots, x_n : \tau_n(c_n), \Gamma \vdash e : \tau_\textrm{sized}(c), r \)}
+    \AxiomC{\hspace{-2mm}\((g: \tau_1^\textrm{base} * \cdots * \tau_n^\textrm{base} \xrightarrow{\stackanchor[1mm]{\(\scriptstyle g_\textit{size}(c_1, \ldots, c_n) = c\)}{\(\scriptstyle g_\textit{runtime}(c_1, \ldots, c_n) = r\)}} \tau^\textrm{base}), \Gamma \vdash e^\prime : \tau^\prime, r\)}
+    \RightLabel{}
+    \BinaryInfC{\(\Gamma \vdash (\textrm{def } g(x_1: \tau_1^\textrm{base}, \, \ldots \, , x_n: \tau_n^\textrm{base}) \; \tau^\textrm{base} \; \{ \, e \, \} ; \, e^\prime) : \tau^\prime, r \)}
+  \end{prooftree}
+\end{minipage}%
+
+\vspace{5mm}
+
+\((\emph{apply-func-2}\,\footnotemark{})\):
+
+\vspace{-5mm}
+
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash g: (\tau_1^\textrm{base} * \cdots * \tau_n^\textrm{base}) \xrightarrow{\stackanchor[1mm]{\(\scriptstyle g_\textit{size}(c_1, \ldots, c_n) = c\)}{\(\scriptstyle g_\textit{runtime}(c_1, \ldots, c_n) = r\)}} \tau^\textrm{base}\)}
+  \AxiomC{\( \Gamma \vdash e_1 : \tau_1(c_1) \hspace{5mm} \cdots \hspace{5mm} \Gamma \vdash e_n : \tau_n(c_n) \)}
+  \RightLabel{}
+  \BinaryInfC{\( \Gamma \vdash g(e_1, \ldots, e_n) : \tau_\textrm{sized}(g_\textit{size}(c_1, \ldots, c_n)), g_\textit{runtime}(c_1, \ldots, c_n) \)}
+\end{prooftree}
+
+
+\addtocounter{footnote}{-1}
+\stepcounter{footnote}\footnotetext{We assume that initialising functions has no cost.}

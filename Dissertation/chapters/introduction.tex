@@ -1,0 +1,92 @@
+%TC:envir minted 1 xall 
+%TC:envir algorithmic 1 xall
+
+% Include tables in word count
+%TC:envir table 0 word
+%TC:envir tabular 1 word
+
+% Include footnotes in word count
+%TC:macro \footnote [text]
+%TC:macro \footnotetext [text]
+
+%TC:group minted 0 0
+%TC:macro \mintinline [ignore]
+%TC:macro \colb [ignore]
+%TC:macro \hyperref [ignore]
+
+\label{sec:1}
+
+Since the mid 2000s, single-core processor performance has stagnated, with performance gains primarily achieved through \textit{multicore parallelism}. Modern programming languages allow programmers to specify parallel execution behaviour (how code is executed across multiple cores) to improve program performance.
+
+However, parallelisation is inherently non-deterministic, resulting in \textit{race conditions}: where a program's output depends on the interleaving order of its threads. Race conditions give rise to a new category of bugs known for their elusive nature, only manifesting in certain thread interleavings. Since many programming languages do not ensure correctness in parallel programs (that is the absence of race conditions), the onus is on the programmer to detect these bugs, which is both challenging and prone to error. In addition, executing programs across multiple cores necessitates inter-core communication: a costly operation which may result in worse performance compared to the original sequential program. Despite its potential for enhancing performance, multicore parallelism poses significant challenges when writing \textit{safe} and \textit{efficient} parallel programs. 
+
+\textit{Automatic parallelisation compilers} alleviate these problems by automatically compiling sequential code into parallel code, ensuring the produced code is safe and efficient with minimal programming overhead. There are two main approaches to automatic multicore parallelisation. The first is \textit{data-level parallelisation}: running the same operation on multiple memory locations at once. This low-level approach is effective at parallelising loops and other vectorisation operations, and is often found in mainstream imperative programming language compilers. It is best suited at optimising data-intensive computations, where loops tend to make up most of the execution time~\cite{doi:10.1080/09720529.2021.1951435}. The alternative approach is \textit{task-based parallelisation}: parallelising groups of code representing an individual task. In this project, each code block is considered a task --- denoted by wrapping a group of code in a pair of isolated curly braces. This naturally extends the typical use of code blocks: grouping together statements which perform the same ``task'' into a new scope, as threads (parallelised code blocks) follow the same scoping rules as code blocks. The pseudocode below illustrates an example of task-based parallelisation.
+
+\vspace{2mm}
+
+\begin{tikzpicture}
+  
+  \node[] (image) at (0, 0) { 
+
+  \noindent\begin{minipage}{.5\textwidth}
+  \begin{minted}{python}
+    {
+      for i in range(1000) { 
+        print(i)
+      }
+    }
+
+    {
+      x := 0 
+      for j in range(1000) { 
+        x += j
+      }
+    }
+  \end{minted}
+  \end{minipage}%
+  \begin{minipage}{0.5\textwidth}
+    \begin{minted}{python}
+      new thread(){
+        for i in range(1000) { 
+          print(i)
+        }
+      }.run()
+
+      new thread(){
+        x := 0 
+        for j in range(1000) { 
+          x += j
+        }
+      }.run()
+    \end{minted}
+  \end{minipage}
+};
+
+\draw [-latex, ultra thick] (-1.8, 0) -- node[midway, above, align=center]{parallelise} (0.5, 0);
+
+\end{tikzpicture}
+
+\vspace{3mm}
+
+\newpage 
+
+Task-based automatic parallelisation, also known as \textit{high-level automatic parallelisation}, aims to improve the performance of programs containing large, independent tasks. Implementations in literature typically focus on toy functional languages as opposed to imperative languages, as this approach requires complex static analysis. However, despite the prevalence of imperative programming languages, the applications of high-level automatic parallelisation in such languages remains largely unexplored. 
+
+Literature on high-level automatic parallelisation dates back to 1970s~\cite{10.1145/1478462.1478537} — describing how to perform parallelisation in the presence of effectful code~\cite{10.1145/73560.73564} and aliasing~\cite{10.1007/978-3-540-30579-8_14}. However, despite extensive research, the lack of practical implementations (which integrate into existing workflows) has led to slow adoption rates of this technology. This project aims to provide a practical implementation of high-level automatic parallelisation, while exploring its potential in imperative programming languages. 
+
+\section{Project Summary}
+\label{sec:1.1}
+
+In this project, I designed a \textit{mid-featured, sequential, imperative programming language} with an \textit{accompanying high-level automatic parallelisation compiler}. My language (hereby dubbed \textit{Kautuka}, after the Indian ritual \textit{thread}) implements a sensible subset of Go with minor syntactic changes. The compiler automatically compiles (sequential) Kautuka to parallel Go code, which can be executed using Go's compiler.
+
+I theorised that high-level automatic parallelisation could improve the performance of I/O-bound programs. This drove my decision to use Go as the compilation target, as it provides robust support for I/O operations and efficient parallelisation primitives. Since Kautuka compiles straight to Go, we can integrate Kautuka into existing Go codebases without disrupting existing workflows. However, much of this work is language agnostic, and generalises to other imperative programming languages beyond Go. 
+
+High-level parallelisation in imperative languages introduces complexities not commonly found in toy functional languages (such as variable mutation, for-loops, and imperative-style functions). This project addresses both the theoretical and practical challenges presented by these issues.
+
+The focus of this dissertation is on designing, implementing, and evaluating a software engineering project. However, I also decided to explore three research questions to help inform my requirements analysis (section \hyperref[sec:2.7]{2.7}) and form the basis of my evaluation (section \hyperref[sec:4]{4}):
+
+\begin{itemize}
+  \item \textit{Does high-level automatic-parallelisation theory, previously developed for toy functional languages, transfer across to a full-featured imperative language?} In sections \hyperref[sec:2.4]{2.4} to \hyperref[sec:2.6]{2.6}, I explain the theoretical extensions needed to make this transition, and in section \hyperref[sec:3.5]{3.5} I describe \textbf{a novel approach to cost analysis (execution time estimation) to overcome constraints found in imperative languages.}
+  \item \textit{Can I/O-bound programs benefit from high-level automatic parallelisation?} In section \hyperref[sec:2.4]{2.4}, I design the theory required for I/O parallelisation. Section \hyperref[sec:4.3]{4.3} demonstrates that \textbf{Kautuka's performance exceeds that of equivalent sequential Go code for I/O-bound programs}. 
+  \item \textit{Are there real-world applications of this compiler?} In section \hyperref[sec:3.5]{3.5}, I implement a powerful cost-inference algorithm to minimise user annotations. This improves the accessibility of this language to the average programmer. In section \hyperref[sec:4.4]{4.4} I demonstrate how \textbf{Kautuka can be integrated into existing Go codebases with minimal effort.}
+\end{itemize}

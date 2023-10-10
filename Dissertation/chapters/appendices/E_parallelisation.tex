@@ -1,0 +1,71 @@
+\label{sec:E}
+
+This appendix details a proof outline for why algorithm \hyperref[alg:one]{1} (presented in section \hyperref[sec:3.6.1]{3.6.1}) produces an \textit{optimal} solution to block clustering (under the given assumptions and constraints).
+
+The \textit{interference operator} \( \cancel{\#} \) is defined as the exact inverse of the non-interference operator \( \# \):
+
+% \hspace*{4cm}
+
+\[ f_1 \; \cancel{\#} \; f_2 \leftrightarrow (\exists \sigma_1 \in f_1, \sigma_2 \in f_2 \cdot \sigma_1 \; \cancel{\#} \; \sigma_2) \]
+
+This allows us to prove the following lemma:
+
+\setcounter{theorem}{0}
+
+\begin{lemma}
+  If we have two non-interfering side-effect sets \( f_1, f_2 \in \mathscr{P}(\mathit{Side\text{-}Effect})\), where \( f_1 \) is non-empty, then after removing a side effect from \( f_1 \) these side-effect sets are still non-interfering.
+\label{lemma:one}\end{lemma}
+
+\[ (\sigma \cup f_1) \: \# \: f_2 \implies f_1 \: \# \: f_2 \]
+
+
+\begin{proof}
+  Proof by contrapositive: \( f_1 \: \cancel{\#} \: f_2 \implies (\sigma \cup f_1) \: \cancel{\#}  \: f_2\)
+
+  \begin{adjustwidth}{1.5em}{0em}
+    \textit{Assume:} \( f_1 \: \cancel{\#} \: f_2 \)
+
+    \vspace{-2mm}
+
+    \begin{align*}
+      f_1 \: \cancel{\#} \: f_2 & \implies \exists \sigma_1 \in f_1, \exists \sigma_2 \in f_2 \cdot \sigma_1 \: \cancel{\#} \: \sigma_2               &  & \textit{(By definition of \(  \cancel{\#} \) )} \\
+                                & \implies \exists \sigma_1 \in (\sigma \cup f_1), \exists \sigma_2 \in f_2 \cdot \sigma_1 \: \cancel{\#} \: \sigma_2                                                      \\
+                                & \implies (\sigma \cup f_1) \: \cancel{\#} \: f_2                                                                    &  & \textit{(By definition of \( \cancel{\#} \) )}  \\
+    \end{align*}
+  \end{adjustwidth}
+\end{proof}
+
+We can also prove the following lemma regarding blocks and parallelisation groups:
+
+\begin{lemma}
+  Let us say we have a group G containing block A. If we were to move block A into a group later than G, then there are no blocks sequentially later than A which can be moved into group G (or a group preceding G), which would otherwise not be possible. \label{lemma:two}
+\end{lemma}
+
+\begin{proof}
+  Proof by contradiction.
+
+  Let us assume that placing block A into a group later than G now allows us to place block B into group G' (where G' is G, or a group preceding G). Note that B would be moved into a group which is executed sequentially earlier than the group it is currently in. This is because A (and hence G') is sequentially executed before B's original group. 
+  
+  The original statement says that, before moving A, it is not possible to place B into group G'. The only reason this could be is if B's side effects were to conflict with A's side effects, or with C's side effects, where C is a block between B and group G' (or C is in G'). If the former is the case, then moving A sequentially later still prevents us from moving B past A (as we cannot re-order blocks with conflicting side effects). Hence, if A is moved to a group later than G, than B cannot be placed to a group G or earlier. If the latter is the case, then moving A does not affect the position of C, so it would still be impossible to re-order B past C. So again, B cannot be placed into a group G or earlier. Hence, we derive a contradiction. 
+\end{proof}
+
+
+\newpage 
+
+Here we provide a proof sketch for the \textit{optimality} of algorithm \hyperref[alg:one]{1}:
+
+\setcounter{theorem}{0}
+
+\begin{theorem}
+  Algorithm \hyperref[alg:one]{1} produces an optimal parallelisation list (there does not exist another valid parallelisation list with less parallelisable groups). Algorithm \hyperref[alg:one]{1} states that a block should be placed into a group at the earliest opportunity (without re-arranging or parallelising blocks with conflicting side effects). 
+\end{theorem}
+
+\begin{proof}
+  Proof by contradiction.
+
+  Let us say that not placing block A into group G at the earliest opportunity produces a more optimal solution. That is, placing A into a group later than G reduces the number of parallelisable groups in the program. Lemma \hyperref[lemma:two]{2} tells us that if we place block A into a group later than G, then G (and all groups preceding G) cannot contain any more blocks than would be possible if G did contain A. Hence, to prove that this produces a more optimal solution, placing A into a group later than G must reduce the total number of parallelisation groups past G, without any other blocks moved forward. 
+
+  However, we now prove that if a construction of groups G\(_1\), \ldots, G\(_n\) contains A, then removing A does not invalidate this group. And hence there cannot exist a construction of groups with fewer parallelisation groups past G that becomes invalidated by removing A. 
+
+  Let us say block A is now stored in block G' (sequentially later than block G). For the construction of groups to no longer be valid if A is removed, then the side-effects in group G' must conflict if A is removed. However, (Lemma \hyperref[lemma:one]{1}) proves that: if two side-effect sets are non-interfering and a side effect is removed from one of these side-effect sets then they are still non-interfering. Since the side effects in G' (with A) were non-interfering, then the removal of A's side-effects means that these side effects must still be non-interfering. Hence, there cannot be a construction of groups which becomes invalidated if A is removed, and so we derive a contradiction. 
+\end{proof}

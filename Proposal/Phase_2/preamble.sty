@@ -1,0 +1,40 @@
+% imports
+\usepackage[pdfborder={0 0 0}]{hyperref}  % turns references into hyperlinks
+\usepackage{graphicx}  % allows inclusion of PDF, PNG and JPG images
+\usepackage{fancyhdr}  % for tweaking the running header/footer lines
+\usepackage{amsfonts}
+\usepackage{amsmath, amssymb}
+\usepackage[utf8]{inputenc}
+\usepackage{titlesec}
+
+% fonts
+
+% code highlighting
+% \usepackage{minted}
+%\usemintedstyle{murphy}
+%\usemintedstyle{pastie}
+% \usemintedstyle{perldoc}
+
+% page layout
+\usepackage[margin=2cm]{geometry}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{\medskipamount}
+% \renewcommand{\baselinestretch}{1.1}
+
+% title spacing
+\titleformat{\chapter}[display]
+{\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{10pt}
+
+% don't let large figures hijack entire pages
+\renewcommand\topfraction{.9}
+\renewcommand\textfraction{.1}
+\renewcommand\floatpagefraction{.8}
+
+% get rid of empty pages
+\renewcommand{\cleardoublepage}{\clearpage}
+
+\raggedbottom
+\sloppy
+\clubpenalty1000%
+\widowpenalty1000%

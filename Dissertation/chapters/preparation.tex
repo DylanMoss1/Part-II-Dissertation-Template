@@ -1,0 +1,781 @@
+%TC:envir minted 1 xall 
+%TC:envir algorithmic 1 xall
+
+% Include tables in word count
+%TC:envir table 0 word
+%TC:envir tabular 1 word
+
+% Include footnotes in word count
+%TC:macro \footnote [text]
+%TC:macro \footnotetext [text]
+
+%TC:group minted 0 0
+%TC:macro \mintinline [ignore]
+%TC:macro \colb [ignore]
+
+%TC:macro \ignore [ignore] 
+%TC:macro \hyperref [ignore]
+
+\label{sec:2}
+
+\newcommand{\ignore}[1]{#1}
+\newcommand{\bound}[2]{\langle{#1, #2}\rangle}
+
+High-level automatic parallelisation utilises \textit{effect systems} to produce \textit{safe} and \textit{efficient} parallel code. Parallel code is \textit{safe} if it avoids race conditions (such as the concurrent execution of \ignore{\mintinline{go}{x = 1}} and \ignore{\mintinline{go}{x = 2}}), and \textit{efficient} if it outperforms the original sequential code. Effect systems augment classical type systems with \textit{effects}, to reason about program execution behaviours such as side effects and execution time. Similar to type systems, effect systems consist of \textit{typing judgements} which infer expression properties --- the execution time of \ignore{\mintinline{go}{e1;e2}} can be inferred to be the sum of \ignore{\mintinline{go}{e1}} and \ignore{\mintinline{go}{e2}}'s execution times.
+
+In sections \hyperref[sec:2.4]{2.4} to \hyperref[sec:2.6]{2.6}, I outline three effect systems required for my implementation of automatic parallelisation. \textit{Side-effect systems} (section \hyperref[sec:2.4]{2.4}) prove that parallelisation is safe while \textit{type-cost} (section \hyperref[sec:2.5]{2.5}) and \textit{runtime-cost systems} (section \hyperref[sec:2.6]{2.6}) ensure that produced parallel code is efficient. These systems form the basis of my compiler implementation (sections \hyperref[sec:3.4]{3.4} and \hyperref[sec:3.5]{3.5}). Section \hyperref[sec:2.7]{2.7} details the project requirements and the software development practices followed throughout the project.
+
+\section{Project Overview}
+
+\label{sec:2.1}
+
+The project consists of two components: the Kautuka language and the high-level automatic parallelisation compiler (hereby referred to as just \textit{the compiler}). This section describes the compilation process of Kautuka, and how Kautuaka can be integrated into existing Go codebases (section \hyperref[sec:2.1.1]{2.1.1}). Section \hyperref[sec:2.1.2]{2.1.2} outlines Kautuka's key language features, and section \hyperref[sec:2.1.3]{2.1.3} describes each step of the compilation process (and the purpose of each effect system).
+
+\subsection{Compilation of Kautuka}
+
+\label{sec:2.1.1}
+
+\noindent\begin{minipage}{.5\linewidth}
+
+  Kautuka's compiler is written in OCaml (ML); compiling Kautuka (Kau) into parallelised Go code. The produced Go code is then compiled into executable machine code using Go's existing compiler. The components implemented in this project are highlighted in grey on the tombstone diagram (fig. \hyperref[fig:tombstone]{2.1}).
+
+\end{minipage}%
+\hspace{1.5mm}\begin{minipage}{.5\linewidth}
+  \hspace{3mm}
+  \begin{tikzpicture}
+    \begin{tombstonediagram}
+      \compiler{cmp}{Kau}{Go}{ML}{}
+      \program[anchor=prg-2-2.north east]{prg}{Program}{Kau}{at (cmp-1-1.north west)}
+      \compiler{cmp2}{Go}{x86}{Go}{at (cmp-1-3.north east)}
+      \program{prgo}{Program}{x86}{at (cmp2-1-3.north east)}
+      \machine{mac}{ML}{at (cmp-2-2.south west)}
+      \machine{mac}{Go}{at (cmp2-2-2.south west)}
+      \machine{mac}{x86}{at (prgo-2-2.south west)}
+      \highlightprogram{prg}
+      \highlightcompiler{cmp}
+    \end{tombstonediagram}
+  \end{tikzpicture}
+  \vspace{-3mm}
+  \captionof{figure}{Kautuka Compilation}
+  \label{fig:tombstone}
+\end{minipage}
+
+\vspace{2mm}
+
+To integrate Kautuka into existing Go codebases, we expect the programmer to identify (sequential) Go files containing large, independent computations. These files can be translated into Kautuka by hand, as the languages share similar syntax. The programmer marks groups of code representing a single \textit{task} with curly braces (which we refer to as \textit{code blocks}). Our compiler then compiles Kautuka programs back to parallelised Go code, placing them alongside the Kautuka files. The Go codebase now contains parallelised Go files, and can be executed as normal using the standard Go compiler.
+
+\subsection{Kautuka Language}
+
+\label{sec:2.1.2}
+
+Kautuka implements a sensible subset of Go (with minor syntactic changes), and closely resembles other C-like languages. This section provides a brief overview of all key language features.
+
+Kautuka has the following types:
+
+\vspace{-2mm}
+
+\[ \tau ::= \textit{int, bool, string, unit, file\_ref, } \tau_1 * \cdots * \tau_n \rightarrow \tau \]
+
+\vspace{-3mm}
+
+where \( \tau_1 * \cdots * \tau_n \rightarrow \tau \) is the imperative-style function signature. Kautuka does not support currying or higher-order functions. Although I planned to implement recursion as a stretch goal, I was unable to complete this extension due to time constraints.
+
+Kautuka does not support exponentiation, division, or modulus operations. Extending the language and compiler with division and modulus is relatively straightforward, however the exponentiation operator would be limited to only integer exponents\footnote{A decision explained in appendix \hyperref[sec:C]{C}.}. Kautuka includes a subtraction operator, but does not support negative numbers --- the responsibility is on the programmer to ensure that the result of subtraction is non-negative.
+
+The language contains inbuilt console I/O functions: \textit{input} and \textit{print}, and file-I/O functions: \textit{open}, \textit{read}, \textit{write}, and \textit{append}. File references (of type \textit{file\_ref}) are obtained by calling the \textit{open} function with a filename string, and can be used to read and write to files. Disjoint file references are tracked using basic aliasing analysis (section \hyperref[sec:3.4]{3.4}), this project restricts aliasing analysis to just file references.
+
+Kautuka also contains variables, control flow, functions, and code blocks (also referred to as just \textit{blocks}). Variables are declared with \ignore{\mintinline{go}{x := e}} and are assigned to with \ignore{\mintinline{go}{x = e}}. Variables declared in a local scope are bound to that scope. In Kautuka, variable types are inferred and so do not need to be annotated. \textit{For-loops} always take the form \ignore{\mintinline{go}{for x := e1; x < e2; x++ { e3 }}}, so that the number of loop iterations can be consistently estimated during cost analysis (section \hyperref[sec:3.5]{3.5}). Kautuka also supports for-each statements \ignore{\mintinline{go}{for x := range str { e }}}, iterating over every character of the string \ignore{\mintinline{go}{str}}. Functions are defined with \ignore{\mintinline{go}{func f(param_1 t_1, ..., param_n t_n) t { e }}}, where \ignore{\mintinline{go}{t}} is the function's return type and \ignore{\mintinline{go}{e}} contains at least one \ignore{\mintinline{go}{return}} statement (if the return type is \textit{non-unit}). Kautuka contains expressions (e.g., \ignore{\mintinline{go}{1 + 2}}), commands (e.g., \ignore{\mintinline{go}{x := 1}}), and structures (e.g., \ignore{\mintinline{go}{if true { 1 } else { 2 }}}). However, we treat commands and structures as unit-type \textit{expressions} to simplify our typing rules.
+
+\subsection{Automatic Parallelisation Pipeline}
+
+\label{sec:2.1.3}
+
+This section outlines the contributions of each effect system to the compiler pipeline. Detailed descriptions of each effect system are provided later in this chapter.
+
+Side-effect tracking \textit{statically} analyses code blocks, to determine which side effects they may potentially produce. Side effects are \textit{non-interfering} if they can be performed in parallel without causing a race condition. If two blocks contain non-interfering side effects, then their sequential execution behaviour is equivalent to all possible parallel execution behaviours --- proving that the parallelisation is safe. Note that side effects produced by local variables bound to a scope are ignored outside that scope.
+
+\newpage
+
+\begin{minted}{go}
+  // No side effects 
+  func f(a int) int { 
+    return a + 1
+  }
+
+  // Side effects = { Write : Console } 🠔 (x, y local)
+  func g(x int, y int) int { 
+
+    // Side effects = { Read : Var(x), Write : Console } 🠔 (z local)
+    {
+      z := f(x)
+      print(z)
+    } 
+
+    // Side effects = { Read : Var(x), Write : Var(y) }
+    {
+      y = x + 10
+    }
+
+    // These side effects are non-interfering 
+    // So it is safe to parallelise these blocks 
+  }
+\end{minted}
+
+Cost analysis determines whether parallelisation produces more \textit{efficient} code. This is achieved by estimating the runtimes of both the \textit{parallel} and \textit{sequential} forms of code. The first step is to estimate the \textit{size} of data types using type-cost analysis. The size of an integer is its numerical value, which can be estimated by tracking its upper and lower bounds. However, finding the output sizes of functions is challenging as they dependent on the function's input sizes, which vary by call site. To avoid tracing function calls throughout the program (which blows up inference time exponentially), we instead generate mappings (also known as \textit{function summaries}) from input sizes to output sizes for each function. At each function call, we look up this mapping and pass in the input sizes to obtain the output size. Since this example is simple, we provide exact values for data-type sizes, as opposed to upper and lower bound estimates:
+
+\begin{minted}{go}
+  // f_size(a) = a + 1 (maps input size to output size)
+  func f(a int) int { 
+    return a + 1
+  }
+
+  func g(x int, y int) int { 
+
+    {
+      z := f(x)   // Size of z = f_size(x) = x + 1
+      print(z)
+    } 
+
+    {
+      y = x + 10  // Size of y = x + 10 
+    }
+
+  }
+\end{minted}
+
+Using this information, we can estimate the \textit{runtime} of each block using a runtime-cost system. In this dissertation we use \textit{runtime} to refer to the time taken to execute an expression, and \textit{dynamic} to refer to analysis performed during program execution. Similar to before, we generate mappings from input sizes to function runtimes; a function's runtime depends on the size of its inputs. We generate \textit{runtime-cost expressions} by summing together runtimes in a code block. These expressions are \textit{dynamically evaluated} once input sizes are known, to produce accurate runtime estimates. If we assume that \ignore{\mintinline{go}{print(x)}} takes \( (100a) \mu s \) where \( a \) the size of \( x \), and \( x + y \) takes \( (2a + 2b) \mu s \) where \( a \) and \( b \) are the sizes of \( x \) and \( y \), and all remaining instructions take no time, then we produce the following runtime-cost expressions (in microseconds):
+
+\begin{minted}{go}
+  // f_runtime(a) = 2a + 2 (maps input size to runtime)
+  func f(a int) int { 
+    return a + 1
+  }
+
+  func g(x int, y int) int { 
+
+    // Runtime expression = 102x + 102 
+    {
+      z := f(x)   // Runtime = f_runtime(x) = 2x + 2
+      print(z)    // Runtime = 100 * f_size(z) = 100(x + 1) = 100x + 100
+    }             
+
+    // Runtime expression = 2x + 20 
+    {
+      y = x + 10  // Runtime = 2x + 2(10) = 2x + 20 
+    }
+
+  }
+\end{minted}
+
+Functions in Go can be marked as \( goroutines \)\footnote{\url{https://go.dev/tour/concurrency/1}} using the \ignore{\mintinline{go}{go}} keyword. When executed, a goroutine runs in the background, allowing execution of the main program to continue. Goroutines are lightweight green threads managed by the Go runtime, which are cheap to spawn and run as they do not interact with the underlying OS. Goroutines are a form of multicore parallelism: goroutine threads automatically execute across multiple cores if available. To run \textit{code blocks} in parallel, we wrap them in anonymous functions, mark them as a goroutines, and call the functions. For example \ignore{\mintinline{go}{{ print(x) }}} would become \ignore{\mintinline{go}{go func() { print(x) }()}}.
+
+Code blocks are parallelised if it is \textit{safe} and produces more \textit{efficient} code. Both side-effect tracking and the generation of \textit{runtime-cost expressions} can be performed statically. However, runtime-cost expressions can only be \textit{evaluated} dynamically. Hence, \textit{safety} can be proved at compile time, but \textit{efficiency} cannot. The solution is to parallelise code into both its sequential and parallel forms if it is \textit{safe}. During the program's execution, we can evaluate the runtime-cost expressions and pick which form to execute based on the result. If \( { \textit{sequential\_runtime} < \textit{parallel\_runtime} + \textit{parallelisation\_costs} } \) then we execute the sequential form, else we choose the parallel form. \textit{parallel\_runtime} is the greatest individual runtime of all parallelised blocks, and \textit{parallelisation\_costs} account for the extra cost of spawning threads and communicating across processors. Here we assume that parallelisation costs sum to \( 50 \mu s\):
+
+\definecolor{green}{rgb}{0, 0.5, 0}
+
+\begin{minted}[escapeinside=||]{go}
+  func f(a int) int { 
+    return a + 1
+  }
+
+  func g(x int, y int) int { 
+
+    // if sequential_runtime < parallel_runtime + parallelisation_costs
+    if (102x + 102) + (2x + 20) < |\textcolor{green}{max}|(102x + 102, 2x + 20) + 50 {
+
+      // sequential execution 
+      {
+        z := f(x)
+        print(z)
+      }
+
+      {
+        y = x + 10
+      }
+
+    } else { 
+
+      // parallel execution 
+      go func() { 
+        z := f(x)
+        print(z)
+      }()
+
+      go func() {    // spawn thread 
+        y = x + 10
+      }()            // invoke thread 
+
+    }
+  }
+\end{minted}
+
+\textbf{Key Takeaway.} \textit{Our program analysis consists of two parts: side-effect tracking to determine if parallelisation is \textbf{safe}, and cost analysis to determine if produced parallel code is more \textbf{efficient} than the original sequential code. If the first criteria is met (statically), then we compile the code into its sequential and parallel form. If the second criteria is met (dynamically), we execute the parallelised form of code.}
+
+
+\section{Background Work}
+
+\label{sec:2.2}
+
+High-level automatic parallelisation literature tends to focus on either \textit{side-effect tracking} or \textit{cost analysis}. This section provides an overview of previous work, and describes how my project combines and builds upon these ideas.
+
+\newpage
+
+\vspace{-3mm}
+
+\subsubsection*{Side-Effect Tracking}
+
+\vspace{-2mm}
+
+Lucassen and Gifford~\cite{10.1145/73560.73564} first proposed a side-effect system, which conservatively infers side effects produced by each expression in a statically-scoped Lisp dialect. Subsequent papers build upon this work by adding more complex features to the language, such as first class functions~\cite{article} and aliased reference values~\cite{talpin_jouvelot_1992}.  This project extends side-effect systems in a different direction to most papers: by implementing this theory into an imperative language. Section \hyperref[sec:3.4]{3.4} describes how we tackle the challenges posed by this new paradigm, such as imperative-style scoping rules.
+
+\vspace{-3mm}
+
+\subsubsection*{Cost Analysis}
+
+\vspace{-3mm}
+
+Reistad and Gifford~\cite{DBLP:conf/lfp/ReistadG94} describe how to estimate the runtime of expressions statically, through algebraic cost reconstruction. Algebraic cost reconstruction consists of: reconstruction, unification, and constraint solving in order to produce runtime bound estimates. This technique can be applied purely statically, however the disadvantages are that this technique often forms inaccurate bounds or non-convergent constraints.
+
+I instead opted for the approach highlighted by Huelsbergen et al.~\cite{Huelsbergen1994UsingTR}, using hybrid analysis (a combination of static and dynamic analysis) to guide parallelisation. \textit{Runtime-cost expressions} are generated statically, and are evaluated dynamically to produce runtime estimates. To the best of my knowledge, this has never before been implemented in an imperative language compiler. Similar solutions use dynamic profiling: analysing instruction execution time to inform parallelisation whilst the program is running. However, this is outside the scope of this project.
+
+The primary challenge of this project will be designing my own theory to infer both data-type sizes and runtime estimates in an imperative language. Since this language is mid-featured, I develop algorithms to deal with mutable variables, for-loops, and I/O operations, which are not commonly found in literature (sections \hyperref[sec:3.5.1]{3.5.1} and \hyperref[sec:3.5.2]{3.5.2})
+
+\vspace{5mm}
+
+\textbf{Key Takeaway.} \textit{Prior work has addressed the implementation of side-effect tracking and cost analysis in toy ML/Lisp dialects. This project extends these ideas by incorporating this analysis into an imperative programming language compiler. This requires the development of novel theory for cost analysis, to overcome issues not commonly found in functional language implementations.}
+
+
+\section{Type Systems}
+
+\label{sec:2.3}
+
+Type systems consist of rules (\textit{typing judgements}), describing how \textit{types} are assigned to syntactic expression constructions. Standard type systems constrain the form of expressions based on their type --- guaranteeing the absence of runtime type errors. Types, and type systems, can be enriched with \textit{effects} to describe an expression's execution behaviour, such as its runtime and side effects.
+
+\subsection{Typing Rules}
+
+\label{sec:2.3.1}
+
+Standard type systems contain typing judgements of the form \( \Gamma \vdash e : \tau \). This is read as: \textit{expression} \( e \) \textit{has the type} \( \tau \) \textit{in the typing context} \( \Gamma \). The typing context \( \Gamma \) is a partial function, mapping variables to their associated types in the current environment (\( \Gamma : \textit{Var} \rightarrow \tau \)). The notation \( \Gamma[x : \tau] \) asserts that the typing context \( \Gamma \) must contain the mapping \( x \mapsto \tau \).
+
+Typing relationships are defined inductively with \textit{typing rules}:
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma_{1} \vdash e_{1} : \tau_{1} \hspace{5pt} \ \cdots \ \hspace{5pt} \Gamma_{k} \vdash e_{k} : \tau_{k}\)}
+  \RightLabel{\((\emph{rule-name})\)}
+  \UnaryInfC{\(\Gamma \vdash e : \tau \)}
+\end{prooftree}
+
+This can be read as: \textit{if the premises above the bar} \(( \Gamma_i \vdash e_i : \tau_i )\) \textit{hold for all} \(0 \leq i \leq k, \) \textit{then the conclusion below the bar} \(( \Gamma \vdash e : \tau )\) \textit{must also hold.}
+
+\subsection{Effect Systems}
+
+\label{sec:2.3.2}
+
+\textit{Computational effects} (or just \textit{effects}) describe the runtime behaviour of expressions, beyond standard typing guarantees. Expression effects are either \textit{immediate} or \textit{latent}. Consider the following code example:
+
+\begin{minted}[escapeinside=||]{go}
+  // e1
+  print("hello world")
+  
+  // e2
+  func g() { 
+    |\textcolor{green}{input}()| 
+  }
+\end{minted}
+
+\textit{Immediate effects} are produced when an expression is evaluated, for example \ignore{\mintinline{go}{e1}} produces the immediate side effect \( \{ \textsc{write} : \text{console} \, \} \). Latent effects are effects encapsulated by functions, and are only produced when the function is called. Expression \ignore{\mintinline{go}{e2}} defines a function \ignore{\mintinline{go}{g}} and produces no immediate side effects (written as \{\}). However, function \ignore{\mintinline{go}{g}} contains effectful code which produce the side effect \( \{ \textsc{read} : \text{console} \, \} \)\footnote{In reality {\ignore{\color{green}\mintinline{go}{input}}}\ignore{\mintinline{go}{()}} also writes to the console, but for the sake of this example we assume that it does not.} when called. This side effect is the \textit{latent effect} of function \ignore{\mintinline{go}{g}}.
+
+\textit{Base types} \( \tau \) refer to a program's standard types: \textit{int, string, bool,} etc. Enriching base types with an arbitrary effect \textrm{eff} produces \textit{effectful types}, written as \( \tau^\textrm{eff}, \textrm{eff} \). The \( \textrm{eff} \) component refers to the immediate effects produced by an expression. The \( \tau^\textrm{eff} \) component represents base types \( \tau \) enriched with latent effects: all functions in \( \tau \) are annotated with latent effects. A function's latent effect is written above the arrow in the function's signature.
+
+For example:
+
+\vspace{1mm}
+
+\begin{align*}
+  \text{Base type } (\tau) \text{ of e1: }                                 & ()                                                                        \\
+  \text{Effectful type } (\tau^\textrm{eff}, \textrm{eff}) \text{ of e1: } & (), \{ \textsc{write} : \text{console} \, \}                            \\
+  \\[1em]
+  \text{Base type } (\tau) \text{ of e2: }                                 & g: () \rightarrow ()                                                      \\
+  \text{Effectful type } (\tau^\textrm{eff}, \textrm{eff}) \text{ of e2: } & g: () \xrightarrow{\{ \textsc{read} \, : \, \text{console} \}} (), \{\} \\
+\end{align*}
+
+\vspace{-2mm}
+
+Effect-system typing judgements take the form \( \Gamma^\textrm{eff} \vdash e : \tau^\textrm{eff}, \textrm{eff} \). The typing context \( \Gamma^\textrm{eff} \) maps variables to their base types now enriched with latent effects (\( \Gamma : \textit{Var} \rightarrow \tau^\textrm{eff} \)).
+
+\textbf{Key Takeaway.} \textit{Type systems can be extended with effects to produce \textbf{effect systems}, providing richer analysis of program execution behaviour. Effect system typing judgements take the form} \( \Gamma^\textrm{eff} \vdash e : \tau^\textrm{eff}, \textrm{eff}\)\textit{. The} \( \tau^\textrm{eff} \) \textit{component represents an expression's \textbf{immediate} effect and} \( \tau^\textrm{eff} \) \textit{represents an expression's base type enriched with \textbf{latent effects}.}
+
+\section{Side-Effect Analysis}
+
+Certain operations, such as I/O, do not fit into the typical lambda-calculus style evaluation. These operators are referred to as \textit{side-effecting operations}, producing \textit{side effects} when evaluated. This section explores how we define side effects in Kautuka (section \hyperref[sec:2.4.1]{2.4.1}) and how we use them to build a side-effect system (section \hyperref[sec:2.4.2]{2.4.2}).
+
+\label{sec:2.4}
+
+\subsection{Side Effects}
+
+\label{sec:2.4.1}
+
+Some considerations must be taken when defining side effects, as they are not well-defined in literature — most notably the treatment of variable read and writes. In the following example:
+
+\begin{minted}{go}
+  {
+    x := 0 
+    x = 1
+  }
+\end{minted}
+
+The code block defines (\ignore{\mintinline{go}{:=}}) a variable \ignore{\mintinline{go}{x}} and mutates it (\ignore{\mintinline{go}{=}}). Mutating a variable produces a \textsc{write} side effect. However, since \ignore{\mintinline{go}{x}} is local to the block, this effect is encapsulated: all changes to the local variable \ignore{\mintinline{go}{x}} cannot be observed outside the block. In this project, we choose to ignore non-observable  side effects by removing local-variable side effects at the end of every scope.
+
+However, non-local variable side effects cannot be ignored as they may produce \textit{data races}. For example, if one block writes to a variable and a second block reads or writes to that same variable in parallel, this causes a \textit{race}. Hence, we are required to track non-local variable \textit{read} and \textit{write} side effects.
+
+Console and file I/O are also tracked in this project. However, file I/O requires aliasing analysis in order to identify disjoint file references (section \hyperref[sec:3.4.1]{3.4.1}).
+
+Side effects comprise two components: a \textit{channel} and an \textit{operation}. A \textit{channel} describes what a side effect interacts with, in our case: non-local variables, console I/O and file I/O. It is atypical to consider non-local variables as a channel. However, since we treat non-local variables and channels in the same way, describing non-local variables as a channel simplifies our definitions. \textit{Operations} describe the interaction with the channel, this project only considers \textit{read} and \textit{write} operations\footnote{Initialisation operations are also common in literature, however these are not necessary for our analysis as local-variable side effects are ignored (variable initialisations are dropped once we leave a scope).}, written as \( \textsc{r} \) and \( \textsc{w} \) respectively.
+
+
+\begin{align*}
+  \mathit{Operation}          & = \{ \ \textsc{r}, \textsc{w} \ \}                                                                  \\
+  \mathit{Channel}            & = \{ \ \text{console}, \text{var}(x), \text{file}(\textit{id}, \textit{ref} \,)\footnotemark{} \ \} \\
+  \mathit{Side\text{-}Effect} & = \mathit{Channel} \times \mathit{Operation}                                                        \\
+\end{align*}
+
+\addtocounter{footnote}{-1}
+\stepcounter{footnote}\footnotetext{The values \textit{id} and \textit{ref} are required for aliasing analysis (section \hyperref[3.4.1]{3.4.1}).}
+
+\vspace{-6mm}
+
+The expression \ignore{\mintinline{go}{print("hello")}} produces the side effect \( { (\textsc{w}, \text{console}) } \), hereby written with the notation \( { \textsc{w}: \text{console} } \). Expressions can produce multiple side effects, which we represent with a \textit{side-effect set} \( f \), where \( f \in \mathscr{P}(\mathit{Side\text{-}Effect}) \). For example, the expression \ignore{\mintinline{go}{print(x)}} produces the side-effect set \( { \{ \textsc{r}: \text{var}(x), \textsc{w}: \text{console} \} } \). A set is sufficient for our analysis, as we are not concerned with the ordering of side effects.
+
+\subsection{Side-Effect System}
+
+\label{sec:2.4.2}
+
+A \textit{side-effect system} extends the standard type system with side effects (\textrm{se}), to track potential side effects produced by each expression. The \textit{immediate effect} is the set of side effects \( { f \in \mathscr{P}(\mathit{Side\text{-}Effect}) } \) produced by an expression's evaluation. Functions are labelled with their \textit{latent side effects} by enriching base types \( \tau \) to produce effectful types \( \tau^\textrm{se} \). From this, we derive the side-effect typing judgement \( \Gamma^\textrm{se} \vdash e : \tau^\textrm{se}, f\). A subset of Kautuka's side-effect system typing rules are listed below, with explanations provided in section \hyperref[sec:3.4.2]{3.4.2}. \( \tau^\textrm{se} \) and \( \Gamma^\textrm{se} \) are written as \( \tau \) and \( \Gamma \) for brevity:
+
+\vspace{1mm}
+
+\begin{prooftree}
+  \AxiomC{}
+  \RightLabel{\((\emph{var-read})\)}
+  \UnaryInfC{\(x : \tau, \, \Gamma \vdash x : \tau, \{\textsc{r}, \text{var}(x)\}\)}
+\end{prooftree}
+
+\vspace{-2mm}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \tau_1, f_1 \)}
+  \AxiomC{\((x: \tau_1), \Gamma \vdash e_2 : \tau_2, f_2 \)}
+  \RightLabel{\((\emph{var-assign})\)}
+  \BinaryInfC{\(\Gamma[x : \tau_1] \vdash x = e_1; \, e_2 : \tau_2, (f_1 \cup f_2 \cup \{(\textsc{w}, \text{var}(x))\}) \)}
+\end{prooftree}
+
+\vspace{1.5mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}, f \)}
+    \RightLabel{\((\emph{print})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{print}(e) : \textit{unit}, f \cup \{(\textsc{w}, \text{console})\}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{ \( \Gamma \vdash n : \textit{int}, \{ \} \) }
+    \RightLabel{\((\emph{input-1} \, \footnotemark{})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{input}(n) : \textit{string}, \{(\textsc{w}, \text{console})\}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{2mm}
+
+\addtocounter{footnote}{-1}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e : \textit{file\_ref}\,(i, g), f \)}
+  \AxiomC{\( \Gamma \vdash n : \textit{int}, \{ \} \)}
+  \RightLabel{\((\emph{file-read-1} \, \footnotemark{})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{read}(e, n) : \textit{string}, f \cup \{(\textsc{r}, \text{file}(i, g))\}\)}
+\end{prooftree}
+
+\vspace{1mm}
+
+\begin{minipage}{\textwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{file\_ref}\,(i, g), f_1 \)}
+    \AxiomC{\( \Gamma \vdash e_2 : \textit{string}, f_2 \)}
+    \RightLabel{\((\emph{file-write})\)}
+    \BinaryInfC{\(\Gamma \vdash \textrm{write}(e_1, e_2) : \textit{unit}, (f_1 \cup f_2 \cup \{(\textsc{w}, \text{file}(i, g))\}) \)}
+  \end{prooftree}
+\end{minipage}
+
+\addtocounter{footnote}{-1}
+\stepcounter{footnote}\footnotetext{The extra argument \( n \) is required for type-cost analysis (section \hyperref[sec:3.5.1]{3.5.1}).}
+
+\vspace{4mm}
+\textbf{Key Takeaway.} \textit{Side-effect systems are used to track all potential side effects produced by an expression. The side-effect typing judgement takes the form \( \Gamma^\textrm{se} \vdash e : \tau^\textrm{se}, f\), to describe both immediate and latent side effects. If the side effects of two code blocks are \textbf{non-interfering}, then it is \textbf{safe} to run them in parallel.}
+
+
+\section{Type-Cost Analysis}
+
+
+\label{sec:2.5}
+
+Program analysis techniques often calculate numerical properties associated with an expression or type, known as a \textit{costs}. This section lays the groundwork for constructing effect systems which estimate both \textit{type costs} (data-type size estimates) and \textit{runtime costs} (runtime estimates). \textit{Cost bounds} (upper and lower bounds on a cost) provide sufficiently accurate estimates for costs. A cost bound indicates a cost's order of magnitude ---  knowing whether a block's runtime is in the order of \(1\mu s, 1ms\) or \(1s\) is sufficient to tell us if the block should be parallelised in the majority of cases.
+
+As mentioned in section \hyperref[sec:2.1.3]{2.1.3}, we want to avoid tracing function calls throughout the program when analysing function costs. Since a function's cost is dependent on its input sizes, mappings can be generated from input sizes to function costs for each function in the program. At every function call, we look up this mapping and pass in the input sizes to obtain its cost.
+
+
+\subsection{Type-Cost Bounds}
+
+
+\label{sec:2.5.1}
+
+Cost bounds consist of a lower bound \( l \) and an upper bound \( u \), written as \( \bound{l}{u} \). Let us consider the following example:
+
+\newpage
+
+\begin{minted}{go}
+  if cond { 
+    x = 3 
+  } else { 
+    x = 5
+  }
+\end{minted}
+
+
+The size of \ignore{\mintinline{go}{x} at the end of the \textit{if-statement}} is represented with the bound \( \bound{3}{5} \). We remember that the size of an integer is its numerical value. In the case of integers, \textit{type costs} refer to both the type \textit{and} size of an expression; the type cost of \( x \) would be written as \textit{int}\(\bound{3}{5}\). This means that, no matter which branch is executed, \ignore{\mintinline{go}{x}} will always be integer bounded by \( \bound{3}{5} \). If we subsequently apply \ignore{\mintinline{go}{x = x + 1}}, then \ignore{\mintinline{go}{x}}'s new type cost will be \( \textit{int}\bound{3 + 1}{5 + 1} = \textit{int}\bound{4}{6} \). These inference rules are applied statically to generate type costs for all expressions. Section \hyperref[sec:3.4.2]{3.4.2} describes how we deal with complications that arise in the presence of control flow.
+
+If a program were to be absent of functions, then all cost bounds would be \textit{concrete} (bounds would only contain integer values). However, the introduction of functions requires us to generate mappings from input costs to function costs. In this case, \textit{input costs} refer to the size of the function's inputs, and \textit{function costs} refers to the size of the function's output. A function call's type cost can be derived from its output size and the return (base) type of the function's signature. Considering the following example:
+
+
+\begin{minted}{go}
+  func g(y int) int { 
+    z := y + 1 
+    return z 
+  }
+\end{minted}
+
+
+
+The type cost of \ignore{\mintinline{go}{z}} is \textit{int}\( \bound{y_l + 1}{y_u + 1} \), where \( y_u \) and \( y_l \) refer to the upper and lower bounds of \( y \). Note that \( y \) here represents the size of the function's input, which is only known at execution time. Since \ignore{\mintinline{go}{z}} is returned by the function, the function's return size is \( \bound{y_l + 1}{y_u + 1} \), which can be described with the mapping \( g_{\textit{size}}(y) = \bound{y_l + 1}{y_u + 1} \) (mapping input sizes to output sizes).
+
+If we were to call this function with \ignore{\mintinline{go}{g(5)}}, where \( 5 \) has the size \( \bound{5}{5} \), we would look up the mapping and substitute in the input size. This produces the output size \( g_{\textit{size}}(\bound{5}{5}) = \bound{6}{6} \), hence the function call has type cost \textit{int}\( \bound{6}{6} \). If type costs are treated as effects, then the mapping from input to output sizes for functions can be thought of as the function's latent effect --- this idea is explored further in the next section.
+
+In the case above, we describe the type cost \textit{int}\( \bound{y_l + 1}{y_u + 1} \) as being dependent on the unknown variable \( y \). To represent this mathematically, we introduce a \textit{dependent cost calculus}, detailed in appendix \hyperref[sec:C]{C}. However to summarise: costs are represented as a polynomial, whose variables represent unknown input sizes.
+
+\subsection{Type Costs}
+
+\label{sec:2.5.2}
+
+Data-type \textit{sizes} are metrics used to estimate the runtime of operators, in-built functions and control flow. If the runtime of string concatenation depends on the length of its input strings, then string length is a useful size metric for strings. In Kautuka, the size of integers are their \textit{numerical values}, and the size of strings are their \textit{lengths}. Sized types \( \tau_\textrm{sized} \) are types where size is well-defined, in our case \textit{ints} and \textit{strings}. Whereas \textit{unsized types} \( \tau_\textrm{unsized} \) do not have an associated size: \textit{unit}, \textit{bool} and \textit{file\_ref}. Functions are sized if and only if their return type is sized. Types which may either be sized or unsized are written as \( \tau \).
+
+A \textit{quantified type} is a combination of a \textit{sized type} and its \textit{associated size}. \textit{Type costs} collectively describe both quantified types and unsized types. Note that in the previous section, the definitions of quantified types and type costs were equivalent as we were only considering sized types. Quantified types are written as \( \tau_\textrm{sized}(c) \) or \( \tau_\textrm{sized}\bound{l}{u} \), where \( c \) and \( \bound{l}{u} \) are the type's size (in cost bound form).
+
+\vspace{1mm}
+
+\begin{align*}
+  \mathit{Sized\text{-}Type}      & = \{ \textit{int, string, } \tau_1 * \cdots \tau_n \rightarrow \tau_{\textrm{sized}} \}             \\
+  \mathit{Unsized\text{-}Type}    & = \{ \textit{unit, bool, file\_ref, } \tau_1 * \cdots \tau_n \rightarrow \tau_{\textrm{unsized}} \} \\
+  \mathit{Quantified\text{-}Type} & = \mathit{Sized\text{-}Type} \times \mathit{Cost\text{-}Bound}                                       \\
+  \mathit{Type\text{-}Cost}       & = \mathit{Quantified\text{-}Type} \cup \mathit{Unsized\text{-}Type}                                 \\
+\end{align*}
+
+\vspace{-6mm}
+
+A type-cost system is an effect system used to infer the type-cost effects (\( \textrm{cost} \)) of all program expressions. An expression's type cost is its \textit{immediate effect}, and the mapping from function input to output sizes is its \textit{latent effect}. For example, the latent effect of function \ignore{\mintinline{go}{g}} from the previous section, \( { g_{\textit{size}}(y) = y + 1 } \), is written as:
+
+\[ g : int \xrightarrow{g_{\textit{size}}(y) = y + 1} int \]
+
+When calling a function, we only look up this mapping if the function's return type is \textit{sized}. To simplify our typing rules, mappings contain all function input variables (including unsized inputs), however the output can only depend on sized inputs.
+
+Effect system judgements generally take the form \( \Gamma^\textrm{eff} \vdash e : \tau^\textrm{eff}, \textrm{eff} \). However, the type-cost system is an exceptional case. Typically, a typing context \( \Gamma^\textrm{eff} \) maps variables to their base types, and functions to their function signatures annotated with latent effects. However, \( \Gamma^\textrm{cost} \) instead maps variables to their \textit{type costs} (base types annotated with immediate effects). This occurs because variable types have a size, and so variables also store effects (which is uncommon in effect systems). Since \( \tau^\textrm{cost} \) is enriched with both immediate and latent effects, the immediate effect component (\( \textrm{cost} \)) is no longer required on the right side of the judgement (\( \tau^\textrm{cost}, \textrm{cost} \)). So typing judgements for type-cost systems are written in the form \( \Gamma^\textrm{cost} \vdash e : \tau^\textrm{cost} \).
+
+In a type-cost system, types should be marked as \( \tau^\textrm{cost} \) (a sized or unsized type), \( \tau_\textrm{sized}^\textrm{cost} \) (a sized type) or \( \tau_\textrm{unsized}^\textrm{cost} \) (an unsized type) --- where sized types can have an associated size. However, this notation is very verbose for typing rules, so we instead write these as \( \tau, \tau_\textrm{sized} \), and \( \tau_\textrm{unsized} \). Similarly, typing contexts \( \Gamma^\textrm{cost} \) are written as \( \Gamma \). If we want to specify that a type is a base type (what would originally have been written as \( \tau \)), we mark this as \( \tau^\textrm{base} \). Note that \( \tau_\textit{sized} \) and \( \tau^\textrm{base} \) refer to the \textit{same} base type \( \tau \), with the former enriched with \textrm{cost} effects.
+
+A subset of type-cost system typing rules are provided below, with full derivations described in section \hyperref[sec:3.5.1]{3.5.1}:
+
+\hspace*{-1.5cm}\begin{minipage}{.33\paperwidth}
+  \vspace{4mm}\begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{int})\)}
+    \UnaryInfC{\(\Gamma \vdash n : \textit{int}\bound{n}{n}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1cm}\begin{minipage}{.33\paperwidth}
+  \vspace{3mm}\begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{bool})\)}
+    \UnaryInfC{\(\Gamma \vdash b : \textit{bool} \)}
+  \end{prooftree}
+\end{minipage}
+\hspace*{-1cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\text{len}(s) = n\)}
+    \RightLabel{\((\emph{string})\)}
+    \UnaryInfC{\(\Gamma \vdash s : \textit{string}\bound{n}{n}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{3mm}
+
+\hspace*{-2cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1) \)}
+    \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2) \)}
+    \RightLabel{\((\emph{add})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 + e_2 : \textit{int}(c_1 + c_2)\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1) \)}
+    \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2) \)}
+    \RightLabel{\((\emph{mult})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 * e_2 : \textit{int}(c_1 \cdot c_2)\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{4mm}
+
+\((\emph{def-func-2})\):
+
+\vspace{-2mm}
+
+\hspace*{-2cm}\begin{minipage}{1.0\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(x_1: \tau_1(c_1), \, \ldots \,, x_n : \tau_n(c_n), \Gamma \vdash e : \tau_\textrm{sized}(c) \)}
+    \AxiomC{\((g: \tau_1^\textrm{base} * \cdots * \tau_n^\textrm{base} \xrightarrow{g_\textit{size}(c_1, \ldots, c_n) = c} \tau^\textrm{base}), \Gamma \vdash e^\prime : \tau^\prime \)}
+    \RightLabel{}
+    \BinaryInfC{\(\Gamma \vdash (\textrm{def } g(x_1: \tau_1^\textrm{base}, \, \ldots \, , x_n: \tau_n^\textrm{base}) \; \tau^\textrm{base} \; \{ \, e \, \} ; \, e^\prime) : \tau^\prime \)}
+  \end{prooftree}
+\end{minipage}%
+
+\vspace{4mm}
+
+\newpage
+
+\((\emph{apply-func-2})\):
+
+\vspace{-3mm}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash g: (\tau_1^\textrm{base} * \cdots * \tau_n^\textrm{base}) \xrightarrow{g_\textit{size}(c_1, \ldots, c_n) = c} \tau^\textrm{base}\)}
+  \AxiomC{\( \Gamma \vdash e_1 : \tau_1(c_1) \hspace{5mm} \cdots \hspace{5mm} \Gamma \vdash e_n : \tau_n(c_n) \)}
+  \RightLabel{}
+  \BinaryInfC{\( \Gamma \vdash g(e_1, \ldots, e_n) : \tau_\textrm{sized}(g_\textit{size}(c_1, \ldots, c_n)) \)}
+\end{prooftree}
+
+\vspace{1mm}
+
+\textbf{Key Takeaway.} \textit{Cost bounds estimate numerical properties of either types or expressions. An example is \textbf{type costs}, which estimate data-type sizes. Function type costs are represented by producing a mapping from the function's input sizes to its output size. At each function call, we substitute in the input sizes to obtain the function's output size (if the return type is sized).}
+
+\section{Runtime-Cost Analysis}
+
+\label{sec:2.6}
+
+Runtime-cost analysis builds upon type-cost analysis to estimate expression runtimes. This process consists of two stages: we first estimate the runtime of instructions (as a function of their input sizes) using static profiling (section \hyperref[sec:2.6.1]{2.6.1}). These estimates are then used to infer the runtime costs of each expression, in a similar fashion to type-cost analysis (section \hyperref[sec:2.6.2]{2.6.2}).
+
+\vspace{-1mm}
+
+\subsection{Instruction Runtime Estimation}
+
+\label{sec:2.6.1}
+
+We collectively refer to operations and initialisations of control flow structures as \textit{instructions}. The execution time of operations may depend on their input sizes. For example, multiplication of two integers \( x \) and \( y \) may take \( (a + b) \mu s \) where \( a \) and \( b \) are the sizes of \( x \) and \( y \) --- evaluating \ignore{\mintinline{go}{3 * 5}} would take \( 15 \mu s \). By executing instructions on various input sizes and measuring their runtimes, we derive the relationship between \textit{input size} and \textit{runtime} for each operation --- in process called \textit{static profiling}. Initialisation times for control flow structures are modelled as \textit{constant}, whose values are also obtained through static profiling. We capitalise instruction names when describing the mapping from input sizes to runtimes (control flow structure initialisations take no inputs). Using the above example, the multiplication operator would have the mapping \( { \text{MULT}(x, y) = x + y } \). If calling a function incurs a constant cost of \( 50 \mu s\), this is written as \( { \text{FUNC\_CALL}() = 50 } \).
+
+Similar to type-costs, we represent runtime-cost estimates using \textit{cost bounds}. If we were to execute \ignore{\mintinline{go}{x * y}}, where the sizes of \ignore{\mintinline{go}{x}} and \ignore{\mintinline{go}{y}} are \( \bound{1}{2} \) and \( \bound{5}{6} \) respectively, then we would obtain the runtime cost \( { \text{MULT}(\bound{1}{2}, \bound{5}{6}) = \bound{1}{2} + \bound{5}{6} = \bound{6}{8} \mu s  } \).
+
+\subsection{Code-Block Runtime Estimation}
+
+\label{sec:2.6.2}
+
+By reasoning about control flow and function calls, we can use runtime estimates for operators to produce \textit{runtime-cost expressions}. For example, if an expression \ignore{\mintinline{go}{e}} takes \( t \) microseconds to execute, then \ignore{\mintinline{go}{for i := 0; i < 10; i++ { e }}} takes approximately \( 10t \) microseconds to execute. However, operation runtimes may depend on the loop's construction. If the runtime of \ignore{\mintinline{go}{print(i)}} depends on the size of \( i \), then each iteration of \ignore{\mintinline{go}{for i := 0; i < 1000; i += 100 { print(i) }}} has a different runtime. We design algorithms to deal with such issues in sections \hyperref[sec:3.5.1]{3.5.1} and \hyperref[sec:3.5.2]{3.5.2}.
+
+For each function, we can derive a mapping from \textit{input sizes} to \textit{runtime cost}. For example, calling the following function:
+
+\begin{minted}{go}
+  func g(x int, y int) { 
+    return x * y 
+  }
+\end{minted}
+
+\newpage
+
+Takes \( \text{MULT}(x, y) + \text{FUNC\_CALL}() \) microseconds, where \( \text{FUNC\_CALL}() \) encapsulates extra costs incurred by invoking a function. If \( \text{MULT}(x, y) = x + y \) and \( \text{FUNC\_CALL}() = 10 \), then we generate the following mapping: \( g_{\textit{runtime}}(x, y) = x + y + 10 \).
+
+\textit{Runtime-cost systems} extend \textit{type-cost systems} with \textit{runtime effects}. The \textit{immediate effects} are the expression's runtime, represented with the cost bound \( r \). The \textit{latent effects} are the function's mappings from input sizes to runtime costs. We enrich type-costs \( \tau^\textrm{cost} \) with runtime effects \( \textrm{run} \) to produce \( \tau^\textrm{run} \), for example:
+
+\[ g : \textit{int} * \textit{int} \xrightarrow{\stackanchor[1mm]{\(\scriptstyle g_{\textit{size}}(x, y) = x \, \cdot \, y \)}{\(\scriptstyle g_{\textit{runtime}}(x, y) = x + y + 10 \)}} \textit{int} \]
+
+Since the type \( \tau^\textrm{run} \) is an extension of \( \tau^\textrm{cost} \), we still maintain the notion of sized and unsized types. From this, we derive the typing judgement \( \Gamma^\textrm{run} \vdash e : \tau^\textrm{run}, r \). A subset of typing rules are shown below, with explanations provided in section \hyperref[sec:3.5.2]{3.5.2}.
+
+Similar to before, we write the types \( \tau^\textrm{run}, \; \tau^\textrm{run}_\textrm{sized}, \; \tau^\textrm{run}_\textrm{unsized} \) as \( \tau, \, \tau_\textrm{sized}, \,\tau_\textrm{unsized} \). \( \Gamma^\textrm{run} \) is written as \( \Gamma \) and base types \( \tau \) are specified with \( \tau^\textrm{base} \).
+
+\vspace{1mm}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1), r_1 \)}
+  \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2), r_2 \)}
+  \RightLabel{\((\emph{add})\)}
+  \BinaryInfC{\(\Gamma \vdash e_1 + e_2 : \textit{int}(c_1 + c_2), r_1 + r_2 + \text{ADD}(c_1, c_2) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1), r_1 \)}
+  \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2), r_2 \)}
+  \RightLabel{\((\emph{mult})\)}
+  \BinaryInfC{\(\Gamma \vdash e_1 * e_2 : \textit{int}(c_1 \cdot c_2), r_1 + r_2 + \text{MULT}(c_1, c_2) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{unit}, r_1 \) }
+  \AxiomC{\( \Gamma \vdash e_2 : \tau, r_2 \) }
+  \RightLabel{\((\emph{seq})\)}
+  \BinaryInfC{\(\Gamma \vdash e_1; e_2 : \tau, r_1 + r_2 \)}
+\end{prooftree}
+
+\vspace{2mm}
+
+Note that in the following rules, \( g \) does not have a \( g_\textit{size} \) mapping, as its return type is \textit{unsized}.
+
+\vspace{3mm}
+
+\((\emph{def-func-1})\):
+
+\vspace{-2mm}
+
+\hspace{-20mm}\begin{minipage}{1.0\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(x_1: \tau_1(c_1), \, \ldots \,, x_n : \tau_n(c_n), \Gamma \vdash e : \tau_\textrm{unsized}, r \)}
+    \AxiomC{\((g : \tau_1 * \cdots * \tau_n \xrightarrow{g_\textrm{runtime}(c_1, \ldots, c_n) = r} \tau_\textrm{unsized}), \Gamma \vdash e^\prime : \tau^\prime, r^\prime \)}
+    \RightLabel{}
+    \BinaryInfC{\(\Gamma \vdash (\textrm{def } g(x_1: \tau_1^\textrm{base}, \, \ldots \, , x_n: \tau_n^\textrm{base}) \; \tau^\textrm{base} \; \{ \, e \, \} ; \, e^\prime) : \tau^\prime, r^\prime \)}
+  \end{prooftree}
+\end{minipage}%
+
+\vspace{3mm}
+
+\((\emph{apply-func-1})\):
+
+\vspace{-3mm}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash g : \tau_1 * \cdots * \tau_n \xrightarrow{g_\textrm{runtime}(c_1, \ldots, c_n) = r} \tau_\textrm{unsized}\)}
+  \AxiomC{\( \Gamma \vdash e_1 : \tau_1(c_1), r_1 \hspace{5mm} \cdots \hspace{5mm} \Gamma \vdash e_n : \tau_n(c_n), r_n \)}
+  \RightLabel{}
+  \BinaryInfC{\( \Gamma \vdash g(e_1, \ldots, e_n) : \tau_\textrm{unsized}, (r_1 + \cdots + r_n + g_\textrm{runtime}(c_1, \ldots, c_n) + \text{FUNC\_CALL}()) \)}
+\end{prooftree}
+
+\vspace{3mm}
+
+
+\textbf{Key Takeaway.} \textit{\textbf{Static profiling} generates mappings from input size to runtime for each instruction. These mappings form the basis of our \textbf{runtime-cost system}, which statically generates \textbf{runtime-cost expressions} parameterised on the unknown size of function inputs.}
+
+\section{Requirements Analysis}
+
+\label{sec:2.7}
+
+Requirements for the core project are listed in the Success Criteria of the Project Proposal (Appendix \hyperref[sec:F]{F}). These are summarised as: creating a high-level automatic parallelisation compiler for a mid-featured imperative programming language, implementing both effect tracking and cost analysis to guide parallelisation. Once these core criteria were met, I implemented stretch goals to explore my research questions --- these informed my choice of extension features during requirements analysis.
+
+\newpage
+
+\newlength{\mylen}
+\setbox1=\hbox{$\bullet$}\setbox2=\hbox{\tiny$\bullet$}
+\setlength{\mylen}{\dimexpr0.5\ht1-0.5\ht2}
+
+\begin{enumerate}
+  \renewcommand\labelitemi{\raisebox{\mylen}{\tiny$\bullet$}}
+
+  \setlength{\itemsep}{2pt}
+        \setlength{\parskip}{0pt}
+        \setlength{\parsep}{0pt}
+  \item \textit{Transfer automatic-parallelisation theory from functional to imperative languages.}
+        \begin{itemize}
+          \item Recursion: a feature commonly found in functional implementations
+        \end{itemize}
+  \item \textit{Investigate the performance of high-level parallelisation on I/O-bound programs.}
+        \begin{itemize}
+          \item Console I/O: Investigate performance on I/O operations
+          \item File I/O: Same as above, but with file-reference aliasing
+        \end{itemize}
+  \item \textit{Investigate real-world applications of the compiler.}
+        \begin{itemize}
+          \item Type-cost inference: minimise programmer overhead, for greater accessibility
+          \item Integration tools: integrate Kautuka into existing codebases (with minimal friction)
+        \end{itemize}
+\end{enumerate}
+
+
+\subsection{MoSCoW Analysis}
+
+\label{sec:2.7.1}
+
+To prioritise tasks, I performed MoSCoW\footnote{\textbf{M}ust have, \textbf{S}hould have, \textbf{C}ould have, \textbf{W}on't have.} analysis for both language (table \hyperref[tab:table1]{2.1}) and compiler (table \hyperref[tab:table2]{2.2}) features. All core deliverables are \textit{Must-Have} features, with extensions placed in the \textit{Should-Have} and \textit{Could-Have} categories. I prioritised extensions based on their relevance to my research questions, and their feasibility to complete within the project's timeframe.
+
+\vspace{-2mm}
+
+\subsubsection*{MoSCoW Analysis of Kautuka Features:}
+
+\begin{table}[h!]
+  \centering
+  \begin{tabular}{lp{86mm}}
+    \toprule % <-- Toprule here
+    \textbf{MoSCoW Category} & \textbf{Kautuka Language Features}                                                                                                                                 \\
+    \midrule % <-- Midrule here
+    \textit{Must-have}       & Control flow (if-else, for-loops, functions), mathematical operations\tablefootnote{Excluding operations such as exponentiation and division.}, boolean operations \\[2mm]
+    \textit{Should-have}     & Console I/O (print, input), file I/O (open, read, write, append)                                                                                                   \\[2mm]
+    \textit{Could-have}      & Recursion, integration into Go                                                                                                                                     \\[2mm]
+    \textit{Won't-have}      & Structs, enums, modules                                                                                                                                            \\
+    \bottomrule
+  \end{tabular}
+  \label{tab:table1}
+  \caption{MoSCoW analysis of Kautuka's language features}
+\end{table}
+
+\vspace{-2mm}
+
+\subsubsection*{MoSCoW Analysis of Compiler Features:}
+
+\begin{table}[h!]
+  \centering
+  \begin{tabular}{lp{95mm}}
+    \toprule % <-- Toprule here
+    \textbf{MoSCoW Category} & \textbf{Automatic Parallelisation Compiler Features}                                                                      \\
+    \midrule % <-- Midrule here
+    \textit{Must-have}       & Non-local variable side-effect tracking, type-cost analysis (no inference), runtime-cost analysis, hybrid parallelisation \\[2mm]
+    \textit{Should-have}     & I/O side-effect tracking, type-cost inference                                                                             \\[2mm]
+    \textit{Could-have}      & Recursive function type-cost inference                                                                                    \\[2mm]
+    \textit{Won't-have}      & Algebraic cost reconstruction, dynamic profiling                                                                          \\
+    \bottomrule
+  \end{tabular}
+  \label{tab:table2}
+  \caption{MoSCoW analysis of the compiler's features}
+\end{table}
+
+\newpage
+
+\subsection{Software Development Model}
+
+\label{sec:2.7.2}
+
+The implementation of this project was split into three chronological phases: implementing Kautuka's base compiler (excluding static analysis), implementing static analysis, and adding extensions. Implementing the base compiler for Kautuka naturally lends itself to spiral development: adding new syntax features and tests during each iteration. However, each static analysis stage depends heavily on the completion of the previous stage --- making this phase more applicable to a waterfall approach. Despite its lack of flexibility, I found this approach to be very effective due to the project's fixed scope and deadline. For extensions, I returned to the spiral model: iteratively implementing extensions upon the existing compiler architecture.
+
+\subsection{Version Control and Tools Used}
+
+\label{sec:2.7.3}
+
+I used Git version control due to its powerful branching capabilities: allowing orthogonal tasks to be split across multiple branches. Once a task was complete, it could be merged back into \ignore{\texttt{main}}. This was useful during the spiral development phases of development where I could work on multiple features concurrently.
+
+Instead of using existing benchmarking tools for \textit{static analysis}, I decided to write my own custom scripts using bash. This enabled more precise control over which instruction runtimes I was measuring, and allowed me to analyse the effects of different compiler flags. I analysed the results, and hence derived mappings from input sizes to output runtimes, using Python's \ignore{\texttt{sklearn}} (model training) and \ignore{\texttt{matplotlib}} (data visualisation) libraries. I chose these libraries as they both act on \ignore{\texttt{numpy}} arrays, allowing me to train models and visualise the results without changing the data's representation.
+
+\section{Starting Point}
+
+\label{sec:2.8}
+
+I had no prior experience with OCaml, compilers or automatic parallelisation beyond the relevant Computer Science Tripos courses\footnote{IA Foundations of Computer Science, IB Semantics, IB Compiler Construction, IB Concurrent and Distributed Systems, II Types, II Optimising Compilers.}. My previous experience with the Go programming language was limited to only basic syntax: mathematical operations, control flow and functions. Before starting, I conducted research with sample Go programs to investigate the feasibility of this project. Beyond that, I have no practical experience writing Go programs.
+
+\section{Summary}
+
+\label{sec:2.9}
+
+We introduce three effect systems to ensure that parallelisation produces \textit{safe} and \textit{efficient} parallel code, serving as the foundation to my compiler's implementation. We tackle challenges introduced by: functions, imperative-style scopes, and local variables, many of which only manifest in the context of imperative languages. My three research questions influenced requirements analysis, and I justify decisions made on the choice of tools and software development models used throughout the project.

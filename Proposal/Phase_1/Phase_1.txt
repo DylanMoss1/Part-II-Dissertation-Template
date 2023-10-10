@@ -1,0 +1,37 @@
+Subject: Phase 1 - Moss: Automatic Parallelisation using Effects Tracking and Cost Analysis
+
+Phase 1 Project Selection Status Report
+
+Name: Dylan Moss
+
+College: Queens'
+
+CRSID: dm894
+
+Director of Studies: Ramsey Faragher
+
+Please complete 1, 2 and 3 below.
+
+1. Please write 100 words on your current project ideas.
+
+The aim of this project is to create a source-to-source compiler from a custom, sequential Go-like language down to parallelised Go code. This allows users to gain the benefits of parallel programming, while avoiding complexities such as reasoning about interfering side-effects and cost overheads introduced by creating threads. I will develop a type system to track the minimum and maximum value of variables (aided by user annotations) and hence use cost analysis based upon [0] to determine the cost benefit of parallelising functions. I will then schedule functions into concurrent threads based upon this analysis and extend [1] to introduce simple side effects checking to ensure there are no conflicting side effects (assuming pointers are conflicted unless explicitly told otherwise by the user).
+
+[0] https://dl.acm.org/doi/pdf/10.1145/361002.361016
+[1] https://www.cl.cam.ac.uk/teaching/2122/OptComp/slides/lecture13.pdf
+
+2. Please list names of potential project supervisors, indicating
+any interactions you have had with them, for example: not
+contacted, awaiting reply, in discussion, agreed to supervise.
+
+Alan Mycroft - agreed to supervise
+
+3. Is there any chance that your project will involve any
+computing resources other than the Computing Service's MCS and
+software that is already installed there, for example: your own
+machine, machines in College, special peripherals, imported
+software packages, special hardware, network access, substantial
+extra disc space on the MCS.
+
+If so indicate below what, and what it is needed for.
+
+This project will require my own personal laptop, but I do not expect to need another other computing resources.

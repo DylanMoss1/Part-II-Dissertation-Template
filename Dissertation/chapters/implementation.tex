@@ -1,0 +1,966 @@
+%TC:envir minted 1 xall 
+%TC:envir algorithmic 1 xall
+
+% Include tables in word count
+%TC:envir table 0 word
+%TC:envir tabular 1 word
+
+% Include footnotes in word count
+%TC:macro \footnote [text]
+%TC:macro \footnotetext [text]
+
+%TC:group minted 0 0
+%TC:macro \mintinline [ignore]
+%TC:macro \colb [ignore]
+
+%TC:macro \ignore [ignore]
+%TC:macro \hyperref [ignore]
+%TC:macro \path [ignore]
+
+\vspace{-1mm}
+
+\RestyleAlgo{ruled}
+\SetKwComment{Comment}{/* }{ */}
+\SetKwFor{Match}{match}{with}{end match}%
+\SetKwFor{Case}{case}{}{end case}%
+
+\label{sec:3}
+
+The compiler implementation consists of \textbf{nine} pipeline stages. Section \hyperref[sec:3.1]{3.1} provides an overview of the pipeline and my general approach to the compiler implementation. Subsequent sections (\hyperref[sec:3.2]{3.2} to \hyperref[sec:3.6]{3.6}) describe the implementation of each pipeline stage. The implementation builds upon theory established in the previous chapter, providing concrete typing rules for all effect systems. Section \hyperref[sec:3.4]{3.4} extends the notion of side-effect tracking with \textit{non-interference} operators and \textit{aliasing analysis}. Sections \hyperref[sec:3.5]{3.5} and \hyperref[sec:3.6]{3.6} present a \textit{powerful cost inference algorithm} to infer expression runtimes.
+
+\vspace{-2mm}
+
+\section{Implementation Overview}
+
+\label{sec:3.1}
+
+\vspace{-1mm}
+
+Kautuka's syntax and language design were formalised before development started on the project. The language specification can be found in appendix \hyperref[sec:A]{A}. However, all key language considerations have already been outlined in the preparation chapter (section \hyperref[sec:2.1.2]{2.1.2}).
+
+This section explores the compiler implementation: providing an illustration of the full compiler pipeline (section \hyperref[sec:3.1.1]{3.1.1}) and an overview of the code repository (section \hyperref[sec:3.1.2]{3.1.2}). Section \hyperref[sec:3.1.3]{3.1.3} describes my general approach to implementing both the effect systems, and the remaining compiler stages.
+
+\vspace{-3mm}
+
+\subsection{Compiler Pipeline}
+
+\label{sec:3.1.1}
+
+\vspace{-1mm}
+
+The following diagram (fig. \hyperref[fig:3.1]{3.1}) summarises the compiler pipeline. We refer to each block in the flowchart as a pipeline \textit{stage}, and each colour as a pipeline \textit{phase}.
+
+\vspace{-1mm}
+
+\definecolor{red_pastel}{HTML}{FFB5B5}
+\definecolor{orange_pastel}{HTML}{FFE5A8}
+\definecolor{yellow_pastel}{HTML}{FAFFA7}
+\definecolor{green_pastel}{HTML}{C7FFB4}
+\definecolor{blue_pastel}{HTML}{BBEAFF}
+\definecolor{light_grey}{HTML}{EAEAEA}
+
+\begin{figure}[ht!]
+  \begin{tikzpicture}[
+      end_point_node/.style={rounded rectangle, draw, fill=light_grey,
+          align=center, text width=2.5cm,
+          minimum height=1cm, inner ysep=2.5mm,
+          inner xsep=4mm},
+      basicnode/.style={draw, text width=2.5cm,
+          align=center, minimum height=1cm, inner xsep=2.5mm, , inner ysep=2.5mm},
+      lexer_parser_node/.style={basicnode, fill=red_pastel},
+      preparation_node/.style={basicnode, fill=orange_pastel, minimum height=1.4cm},
+      side_effect_node/.style={basicnode, fill=yellow_pastel, minimum height=1.4cm},
+      cost_analysis_node/.style={basicnode, fill=green_pastel},
+      parallelisation_node/.style={basicnode, fill=blue_pastel}
+    ]
+
+    \node[end_point_node] at (0.2, 0) (kautuka) { Kautuka };
+    \node[lexer_parser_node] at (4.6, 0) (lexer_parser) { Lexing and Parsing };
+    \draw[-latex] (kautuka) to (lexer_parser);
+    \node[preparation_node, align=center] at (8.7, 0) (import) { Identify Go Libraries };
+    \draw[-latex] (lexer_parser) to (import);
+    \node[preparation_node] at (12.8, 0) (alpha_conversion) { Alpha Conversion };
+    \draw[-latex] (import) to (alpha_conversion);
+    \node[side_effect_node, below=of kautuka] at (0.2, -1.09) (file_tracking) { Track Disjoint File References };
+    \draw[-latex] (alpha_conversion.east) [rounded corners]-- (15,0) -- (15, -1.5) -- (-2, -1.5) -- (-2, -3) [sharp corners]-- (file_tracking.west);
+    \node[side_effect_node] at (4.6, -3) (side_effect_tracking) { Side-Effect Tracking };
+    \draw[-latex] (file_tracking) to (side_effect_tracking);
+    \node[cost_analysis_node] at (8.7, -3) (type_cost) { Type-Cost Analysis };
+    \draw[-latex] (side_effect_tracking) to (type_cost);
+    \node[cost_analysis_node] at (12.8, -3) (runtime_cost) { Runtime-Cost Analysis };
+    \draw[-latex] (type_cost) to (runtime_cost);
+    \node[parallelisation_node, below=of file_tracking] at (0.2, -4.1) (par_benefit) { Re-order and Parallelise Code Blocks };
+    \draw[-latex] (runtime_cost.east) [rounded corners]-- (15, -3) -- (15, -4.5) -- (-2, -4.5) -- (-2, -6) [sharp corners]-- (par_benefit.west);
+    \node[parallelisation_node] at (4.6, -6) (go_translator) { Translate to Parallelised Go Code };
+    \draw[-latex] (par_benefit) to (go_translator);
+    \node[end_point_node] at (8.7, -6) (go) { Parallelised Go Code };
+    \draw[-latex] (go_translator) to (go);
+
+    \matrix [draw, below left, inner xsep=0.9mm, inner ysep=0.095cm] at (15, -4.8) {
+      \node [rounded rectangle, minimum width=0.94cm, xshift=-0.09cm, draw, fill=light_grey, label=right:\scriptsize Program Code] {}; \\[-0.65mm]
+      \node [minimum width=0.75cm, draw, fill=red_pastel, label=right:\scriptsize Lexing and Parsing] {}; \\[-0.65mm]
+      \node [minimum width=0.75cm, draw, fill=orange_pastel, label=right:\scriptsize Pre-processing] {}; \\[-0.65mm]
+      \node [minimum width=0.75cm, draw, fill=yellow_pastel, label=right:\scriptsize Side-Effect Tracking] {}; \\[-0.65mm]
+      \node [minimum width=0.75cm, draw, fill=green_pastel, label=right:\scriptsize Cost Analysis] {}; \\[-0.65mm]
+      \node [minimum width=0.75cm, draw, fill=blue_pastel, label=right:\scriptsize Parallelisation] {}; \\[-0.65mm]
+    };
+  \end{tikzpicture}%
+  \label{fig:3.1}
+  \caption{An overview of Kautuka's compiler pipeline}
+\end{figure}
+
+\subsection{Repository Overview}
+
+\label{sec:3.1.2}
+
+The top-level directory contains the compiler entry point \ignore{\path{src/bin/}}, library files \ignore{\path{src/lib/}}, tests \ignore{\path{tests/}}, and benchmarks \ignore{\path{benchmarks/}}. The library directory includes folders \ignore{\path{src/lib/util}} (helper modules), and \ignore{\path{src/lib/00_ast/}} (AST type definitions and our \textit{abstract analysis framework}, section \hyperref[sec:3.1.3]{3.1.3}). The remaining folders in this directory refer to each \textit{phase} of the compiler pipeline. Static profiling and benchmarking are written in a combination of Python, Go and bash; all remaining code is written in OCaml. In total, I wrote \textbf{480 tests}: \( 432 \) unit tests and \( 48 \) end-to-end tests.
+
+\vspace{4.5mm}
+
+\setlength{\tabcolsep}{12pt}
+
+\begin{table}[!h]
+  \begin{center}
+    \renewcommand{\arraystretch}{1.5}
+
+    \begin{tabular}{l p{0.41\textwidth} l}
+      \toprule
+      \textbf{Folder}                   & \textbf{Description}                                                   & \textbf{Lines} \\
+      \midrule
+      \path{src/bin}                    & Compiler entry point, parses command line arguments                    & \( 78 \)             \\
+      \path{src/lib/00_ast}             & Contains AST type definitions and our abstract analysis framework      & \( 981 \)            \\
+      \path{src/lib/01_parsing}         & Contains the lexer and parser                                          & \( 320 \)            \\
+      \path{src/lib/02_preprocessing}   & Identifies libraries to import and performs alpha conversion           & \( 183 \)            \\
+      \path{src/lib/03_side_effect}     & Tracks side effects for each code block                                & \( 320 \)            \\
+      \path{src/lib/04_cost_analysis}   & Estimates runtime of each code block                                   & \( 1120 \)           \\
+      \path{src/lib/05_parallelisation} & Converts AST into parallelised Go code                                 & \( 600 \)            \\
+      \path{src/lib/util}               & Contains helper modules                                                & \( 496 \)            \\
+      \path{src/lib/static_profiling}   & Estimates instruction runtime (as a function of input data-type sizes) & \( 921 \)            \\
+      \path{tests}                      & Unit and end-to-end tests using \ignore{\texttt{pytest}}               & \( 1023 \)           \\
+      \path{benchmark}                  & Benchmarks for Kautuka performance                                     & \( 1154 \)           \\
+      \bottomrule
+    \end{tabular}
+    \caption{\label{tab:3.1}Repository overview. All code was written from scratch.}
+  \end{center}
+\end{table}
+
+\vspace{-4.5mm}
+
+The OCaml compiler pipeline is built using the Dune build system~\cite{dune}. Within each library, I group code into \textit{modules}: a \ignore{\texttt{.ml}} file for each module body with a corresponding \ignore{\texttt{.mli}} interface file for type signatures. To maintain good coding practices, I followed OCaml's programming guidelines~\cite{ocaml} and formatted my code with \ignore{\texttt{ocamlformat}~\cite{ocamlformat}}.
+
+\subsection{Implementation Approach}
+
+\label{sec:3.1.3}
+
+The project's implementation consists of three effect systems: a side-effect system, a type-cost system, and a runtime-cost system. Despite these systems having different effects and typing rules, they all share common generalisable features. All three effect systems implement a \textit{post-order traversal} of an AST with an \textit{accumulator environment}\footnote{In the case of type-cost analysis, the accumulator environment is not used.} (\( \Gamma^\textrm{eff} \)), a \textit{monadic return type} (\( \textrm{eff} \)), and \textit{typing rules}. The traversal maps an environment and AST expression to an effect-enriched environment (representing \textit{latent effects}) and a monadic return type (representing \textit{immediate effects}), \( { \textit{Traversal} : \Gamma * \ignore{\texttt{expr}} \rightarrow \Gamma^\textrm{eff} * \textrm{eff} } \).
+
+In this project, traversing an AST with an accumulator and a monadic return type has uses beyond effect systems --- the same pattern can be used to implement pipeline stages such as \textit{alpha conversion}. Enabling the traversal to modify expressions (\( { \textit{Traversal} : \Gamma * \ignore{\texttt{expr}} \rightarrow \Gamma^\textrm{eff} * \ignore{\texttt{expr}} * \textrm{eff} } \)) and generalising our definition of \textit{effects} gives us an \textit{abstract analysis framework}, which is utilised by almost\footnote{Excluding lexing, parsing, and translating the program into Go.} all stages of the pipeline.
+
+\textbf{Key Takeaway.} \textit{The compiler pipeline consists of phases, building upon the theory detailed in the Preparation chapter. Effect systems and other pipeline stages can be generalised into an \textbf{abstract analysis framework} by abstracting out common features.}
+
+\section{Lexing and Parsing}
+
+\label{sec:3.2}
+
+A Kautuka program is \textit{tokenized} into a \textit{token stream} using \ignore{\texttt{ocamllex}}~\cite{ocamllex}: a tool which generates lexers based on regular expression specifications. The token stream is \textit{parsed} using \ignore{\texttt{menhir}}~\cite{menhir} to produce a program AST (in the form of OCaml algebraic data types). \ignore{\texttt{menhir}} compiles Kautuka's grammar specification (appendix \hyperref[sec:A]{A}) into a parser. I opted to use parser generators, as opposed to handwriting my own parsers, as they pick up more errors, are easier to extend, and can handle complex LR(1) grammars.
+
+% 1: [http://gallium.inria.fr/~fpottier/menhir/]
+
+\textit{Desugaring} is also applied at this stage --- the expression \ignore{\mintinline{go}{x += e}} is expanded to \ignore{\mintinline{go}{x = x + e}} and \textit{if-elif-else} blocks are expanded to chained \textit{if-else} blocks.
+
+\textbf{Key Takeaway.} \textit{The tools \ignore{\texttt{ocamllex}} and \ignore{\texttt{menhir}} produce lexers and parsers for our program based upon syntax specification. Lexers and parsers convert a program string into an AST, used in subsequent pipeline stages.}
+
+\section{Pre-processing}
+
+\label{sec:3.3}
+
+The \textit{pre-processing phase} annotates and modifies the program AST to assist with future pipeline stages. We identify libraries which need to be imported in the produced Go code (section \hyperref[sec:3.3.1]{3.3.1}), and perform alpha conversion in preparation of side-effect tracking and cost analysis (section \hyperref[sec:3.3.2]{3.3.2}).
+
+\subsection{Identify Go Libraries}
+
+\label{sec:3.3.1}
+
+Unlike Go, Kautuka does not contain import statements or libraries, treating standard library functions as \textit{in-built}. When compiling to parallelised Go, we traverse Kautuka using the \textit{abstract analysis framework} to accumulate a list of required Go libraries. These import statements are inserted at the top of the produced Go code.
+
+\subsection{Alpha Conversion}
+
+\label{sec:3.3.2}
+
+One key distinction from functional languages is that imperative languages use \textit{scoping blocks} as opposed to \textit{let bindings}. Scoping blocks allow multiple local-variable declarations to be made inside expressions, whereas let bindings explicitly declare a single local variable at the expression's top level. We are required to identify local-variable declarations in scoping blocks for side-effect tracking (section \hyperref[sec:3.4.2]{3.4.2}). To do this, we traverse the expression with our abstract analysis framework and accumulate local variables. If a code-block expression \( \{ e \} \) contains local variables \( x, y, \ldots, z \), we write this as \( \{ e \}_{\{ x, y, \ldots, z \}} \).
+
+The abstract framework can also be used to apply alpha conversion --- a process of disambiguating logically distinct variables which share the same name. This is useful for both local-variable tracking and subsequent pipeline stages.
+
+\textbf{Key Takeaway.} \textit{Pre-processing utilises the \textbf{abstract analysis framework} to identify libraries, accumulate local variables defined in each block, and perform alpha conversion.}
+
+\section{Side-Effect Tracking}
+
+\label{sec:3.4}
+
+This section extends side-effect tracking with \textit{aliasing analysis} (section \hyperref[sec:3.4.1]{3.4.1}) to track disjoint file references, providing a basis for file-I/O analysis. We use this analysis to produce \textit{concrete typing rules} for Kautuka's side-effect system (section \hyperref[sec:3.4.2]{3.4.2}). Once side-effect sets have been inferred for each code block, a \textit{non-interference operator} tells us if the side effects are non-interfering, and hence whether blocks can be \textit{safely} parallelised.
+
+\subsection{File Tracking}
+
+\label{sec:3.4.1}
+
+Full reference analysis has been shown to be statically undecidable~\cite{reps2000undecidability}.  However, \textit{aliasing analysis} provides a conservative approach to reference tracking, to determine whether references are \textit{disjoint}. In our case, we use aliasing analysis guided by user annotations to track disjoint \textit{file references}.
+
+Two references are the \textit{same} if initialised at the same location, and are \textit{non-disjoint} if they point to the same physical file. The following example highlights the subtle differences between these definitions:
+
+\begin{minted}{go}
+  a := open("ref")
+  b := a 
+  // a and b are the same and non-disjoint 
+  // (the same reference stored in a is also assigned to b)
+
+  x := open("ref")
+  y := open("ref")
+  // x and y are different and non-disjoint
+  // (x and y's references were defined at different locations, however 
+  //  they still point to the same file)
+\end{minted}
+
+Existing literature uses \textit{equality constraints}~\cite{10.1145/237721.237727} or \textit{union-find data structures}~\cite{andersen1994program} to track direct and indirect references. However, this project does not require such complex algorithms as Kautuka only contains \textit{direct} references. We instead mark reference with an \textit{identifier} and \textit{group}: the identifier tracks if references are the \textit{same}, and groups use this information to track if references are \textit{disjoint}.
+
+A file reference is marked with a \textit{fresh} (new) identifier on initialisation, which is passed along during variable assignment. A programmer often knows when they define disjoint references, however the program does not --- hence we allow the user to optionally annotate disjoint references into the same \textit{group} (represented with an \textit{integer}). Unannotated references are assumed to be non-disjoint from all other references, and hence are placed into a \textit{fresh} group. Note that this idea may be unintuitive, references known to point to \textit{different} memory locations are placed into the \textit{same} group. However, let us consider a system where references pointing to the \textit{same} memory locations into the \textit{same} group. Unannotated references would need to be placed into \textit{every} group, as we cannot assume there are any memory locations it does not point to. This decision simplifies our typing rules, and reduces the burden on the programmer --- successively defined file reference are more likely to be disjoint than the non-disjoint, reducing the number of groups required.
+
+References in the same group are guaranteed to be disjoint, with the exception that multiple instances of the \textit{same} reference can be in the same group; this is detected with the reference identifier. Hence, references are disjoint if they are in the \textit{same group} and have \textit{different identifiers}.
+
+Reference tracking is implemented with the following typing rules. \( \textit{file\_ref}\,(i, g) \) is a file reference with identifier \( i \) and group \( g \). We use \( i' \) to refer to a fresh identifier, and \( g' \) to refer to a fresh group.
+
+\vspace{4mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}\)}
+    \RightLabel{\((\emph{open-1})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{open}(e) : \textit{file\_ref}\,(i', g') \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string} \)}
+    \AxiomC{\( \Gamma \vdash n : \textit{int} \)}
+    \RightLabel{\((\emph{open-2})\)}
+    \BinaryInfC{\(\Gamma \vdash \textrm{open}(e, n) : \textit{file\_ref}\,(i', n) \)}
+  \end{prooftree}
+\end{minipage}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \textit{file\_ref}\,(i, g) \)}
+  \AxiomC{\((x: \textit{file\_ref}\,(i, g)), \Gamma \vdash e_2 : \tau \)}
+  \RightLabel{\((\emph{var-file-declare})\)}
+  \BinaryInfC{\(\Gamma \vdash x := e_1; \, e_2 : \tau \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \textit{file\_ref}\,(i_1, g_1) \)}
+  \AxiomC{\((x: \textit{file\_ref}\,(i_1, g_1)), \Gamma \vdash e_2 : \tau \)}
+  \RightLabel{\((\emph{var-file-assign})\)}
+  \BinaryInfC{\(\Gamma[x : \textit{file\_ref}\,(i_2, g_2)] \vdash x = e_1; \, e_2 : \tau \)}
+\end{prooftree}
+
+
+(\emph{var-file-decl}) and (\emph{var-file-assign}) are captured by the traditional (\emph{var-declare}) and (\emph{var-assign}) typing rules if we consider file references with different identifiers and groups (e.g., \( \textit{file\_ref}\,(i_1, g_1) \) and \( \textit{file\_ref}\,(i_2, g_2) \)) to be of the same type.
+
+\subsection{Side-Effect Tracking}
+
+\label{sec:3.4.2}
+
+The following side-effect definitions were presented in the preparation chapter (section \hyperref[sec:2.4]{2.4}):
+
+\begin{align*}
+  \mathit{Operation}          & = \{ \, \textsc{r}, \textsc{w} \, \}                                    \\
+  \mathit{Channel}            & = \{ \, \text{console}, \text{var}(x), \text{file}(i, g) \, \} \\
+  \mathit{Side\text{-}Effect} & = \mathit{Channel} \times \mathit{Operation}                            \\
+\end{align*}
+
+\vspace{-6mm}
+
+Two side effects are described as \textit{non-interfering} if two expressions producing these effects have the same sequential and parallel execution behaviour. A \textit{non-interference operator} \( \# \) describes whether two \textit{side effects} are non-interfering through \textit{syntactic} (as opposed to \textit{semantic}) analysis. The operator can be lifted to describe whether two \textit{side-effect sets} are non-interfering:
+
+\begin{align*}
+  \# & : \mathit{Side\text{-}Effect} \times \mathit{Side\text{-}Effect} \rightarrow \{ 0, 1 \}                           \\
+  \# & : \mathscr{P}(\mathit{Side\text{-}Effect}) \times \mathscr{P}(\mathit{Side\text{-}Effect}) \rightarrow \{ 0, 1 \}
+\end{align*}
+
+Two side effects are \textit{non-interfering} if both their operations are \textit{reads} or they act on \textit{different channels}. The only exception to the latter is if both side effects act on file-I/O channels, in which case they are non-interfering if the file references are disjoint. This produces the following definition, \( { \forall (o_1, c_1), (o_2, c_2) \in \mathit{Side\text{-}Effect} }\):
+
+\begin{align*}
+  (o_1, c_1) \; \# \; (o_2, c_2) & \leftrightarrow (o_1 = \textsc{r} \land o_2 = \textsc{r})               \\ & \;
+  \lor \neg (c_1 = \text{file\_ref}\,(i_1, g_1) \land c_1 = \text{file\_ref}\,(i_2, g_2)) \land (c_1 \neq c_2) \\ & \;
+  \lor \: \: \: (c_1 = \text{file\_ref}\,(i_1, g_1) \land c_1 = \text{file\_ref}\,(i_2, g_2)) \land (i_1 \neq i_2 \land g_1 = g_2)
+\end{align*}
+
+Two side-effect sets \( f_1, f_2 \) are non-interfering if \textit{all} side effects in \( f_1 \) are non-interfering with \textit{all} side effects in \( f_2 \):
+
+\[ f_1 \; \# \; f_2 \leftrightarrow (\forall \sigma_1 \in f_1, \sigma_2 \in f_2 \cdot \sigma_1 \; \# \; \sigma_2) \]
+
+A side-effect system can be implemented using the \textit{abstract analysis framework}. The monadic return type stores the expression's side-effect set \( f \) and the accumulator stores the context \( \Gamma^\textrm{se} \). A representative subset of typing rules are described below, with a full list provided in Appendix \hyperref[sec:B]{B}.
+
+In general, the side effects produced by an expression are the union of its sub-expression's side effects, plus any new side effects introduced by the top-level operation. For example, if \ignore{\mintinline{go}{e}} produces the side effect \( f \), then \ignore{\mintinline{go}{print(e)}} produces the side effects \( \{ \textsc{w} : \text{console} \} \, \cup \, f \). For brevity, \( \tau^\textrm{se} \) is written as \( \tau \) and \( \Gamma^\textrm{se} \) is written as \( \Gamma \):
+
+\vspace{0.5mm}
+
+\begin{prooftree}
+  \AxiomC{}
+  \RightLabel{\((\emph{var-read})\)}
+  \UnaryInfC{\(x : \tau, \, \Gamma \vdash x : \tau, \{\textsc{r}, \text{var}(x)\}\)}
+\end{prooftree}
+
+\vspace{-6.5mm}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \tau_1, f_1 \)}
+  \AxiomC{\((x: \tau_1), \Gamma \vdash e_2 : \tau_2, f_2 \)}
+  \RightLabel{\((\emph{var-assign})\)}
+  \BinaryInfC{\(\Gamma[x : \tau_1] \vdash x = e_1; \, e_2 : \tau_2, (f_1 \cup f_2 \cup \{(\textsc{w}, \text{var}(x))\}) \)}
+\end{prooftree}
+
+\vspace{-1mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}, f \)}
+    \RightLabel{\((\emph{print})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{print}(e) : \textit{unit}, f \cup \{(\textsc{w}, \text{console})\}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{ \( \Gamma \vdash n : \textit{int}, \{ \} \) }
+    \RightLabel{\((\emph{input-1} \, \footnotemark{})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{input}(n) : \textit{string}, \{(\textsc{w}, \text{console})\}\)}
+  \end{prooftree}
+\end{minipage}
+
+\addtocounter{footnote}{-1}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e : \textit{file\_ref}\,(i, g), f \)}
+  \AxiomC{\( \Gamma \vdash n : \textit{int}, \{ \} \)}
+  \RightLabel{\((\emph{file-read-1} \, \footnotemark{})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{read}(e, n) : \textit{string}, f \cup \{(\textsc{r}, \text{file}(i, g))\}\)}
+\end{prooftree}
+
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{file\_ref}\,(i, g), f_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{string}, f_2 \)}
+  \RightLabel{\((\emph{file-write})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{write}(e_1, e_2) : \textit{unit}, (f_1 \cup f_2 \cup \{(\textsc{w}, \text{file}(i, g))\})\)}
+\end{prooftree}
+
+\addtocounter{footnote}{-1}
+\stepcounter{footnote}\footnotetext{The extra argument \( n \) is required for type-cost analysis (section \hyperref[sec:3.5.1]{3.5.1}).}
+
+\vspace{5mm}
+
+The system infers all side effects which can be \textit{potentially} be produced by the expression. Since this analysis is \textit{syntactic}, we add side effects from \textit{all} possible paths in the presence of branches.
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{bool}, f_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{unit}, f_2 \)}
+  \AxiomC{\( \Gamma \vdash e_3 : \textit{unit}, f_3 \)}
+  \RightLabel{\((\emph{if})\)}
+  \TrinaryInfC{\(\Gamma \vdash \textrm{if } e_1 \; \{ \, e_2 \, \} \textrm{ else } \{ \, e_3 \, \} : \textit{unit}, (f_1 \cup f_2 \cup f_3) \)}
+\end{prooftree}
+
+\vspace{4mm}
+
+\newpage
+
+We recall from section \hyperref[sec:2.4]{2.4} that local-variable side effects are removed from the side-effect set of scopes. The following example describes how this is applied to a \textit{code block}. However, the same rule is applied to all other scopes as well (for example in \textit{if-statements} and \textit{functions}), but are omitted from this section for brevity. We use the notation \( f \setminus \{x, y, \ldots \, z\} \) to represent the removal of variable side effects affecting variables \(x, y, \ldots, z\) from the side-effect set \( f \):
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e : \textit{unit}, f \)}
+  \RightLabel{\((\emph{block})\)}
+  \UnaryInfC{\(\Gamma \vdash \{ e \}_{ \{ x, y, \ldots, z \} } : \textit{unit}, f \setminus \{ x, y, \ldots, z \} \)}
+\end{prooftree}
+
+The function typing rules follow directly from the definitions of latent effects (section \hyperref[sec:2.3.2]{2.3.2}):
+
+\begin{prooftree}
+  \AxiomC{\(x_1: \tau_1, \, \ldots \,, x_n : \tau_n, \Gamma \vdash e : \tau, f\)}
+  \AxiomC{\((g: \tau_1 * \cdots * \tau_n \xrightarrow{f} \tau), \Gamma \vdash e^\prime : \tau^\prime, f^\prime\)}
+  \RightLabel{\((\emph{def-func})\)}
+  \BinaryInfC{\(\Gamma \vdash (\textrm{def } g(x_1: \tau_1, \, \ldots \, , x_n: \tau_n) \; \tau \; \{ \, e \, \} ; \, e^\prime) : \tau^\prime, f^\prime \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma(g) = \tau_1 * \cdots * \tau_n \xrightarrow{f} \tau \)}
+  \AxiomC{\( \Gamma \vdash e_1 : \tau_1, f_1 \)}
+  \AxiomC{\( \hspace{-2.5mm} \cdots \hspace{-2.5mm} \)}
+  \AxiomC{\( \Gamma \vdash e_n : \tau_n, f_n \)}
+  \RightLabel{\((\emph{apply-func})\)}
+  \QuaternaryInfC{\( \Gamma \vdash g(e_1, \ldots, e_n) : \tau, (f \cup f_1 \cup \cdots \cup f_n) \)}
+\end{prooftree}
+
+\vspace{3mm}
+
+Section \hyperref[sec:2.1.3]{2.1.3} provides full examples of side-effect inference and cost analysis. The following sections will reiterate these examples, in light of details describing how the analysis is performed.
+
+\begin{minted}{go}
+  // No side effects 
+  func f(a int) int { 
+    return a + 1
+  }
+
+  // Side effects = { Write : Console } 🠔 (x, y local)
+  func g(x int, y int) int { 
+
+    // Side effects = { Read : Var(x), Write : Console } 🠔 (z local)
+    {
+      z := f(x)
+      print(z)
+    } 
+
+    // Side effects = { Read : Var(x), Write : Var(y) }
+    {
+      y = x + 10
+    }
+
+    // These side effects are non-interfering 
+    // So it is safe to parallelise these blocks 
+  }
+\end{minted}
+
+\textbf{Key Takeaway.} \textit{We can infer the side effects produced by expressions with a side-effect system. File-reference aliasing tells us whether two file references are \textbf{disjoint}, which is used by the \textbf{non-interfering operator} \( \# \) to determine if two side effects are non-interfering. If the side-effect sets produced by adjacent code blocks are \textbf{non-interfering} then the blocks are \textbf{safe} to parallelise.}
+
+\section{Cost Analysis}
+
+\label{sec:3.5}
+
+This section aims to implement the \textit{type-cost system} and \textit{runtime-cost systems} introduced in the preparation chapter. It is cumbersome for the programmer to annotate sizes for all types in the program, so we implement a \textit{powerful type-cost inference algorithm} to minimise programmer overhead.
+
+\subsection{Type-Cost Analysis}
+
+\label{sec:3.5.1}
+
+\textit{Binary cost-bound operations} can be applied to the cost bounds \( c_1 = \bound{l_1}{u_1}, \, c_2 = \bound{l_2}{u_2} \) as follows:
+
+\makeatletter
+\newcommand{\dotminus}{\mathbin{\text{\@dotminus}}}
+
+\newcommand{\@dotminus}{%
+  \ooalign{\hidewidth\raise1ex\hbox{.}\hidewidth\cr$\m@th-$\cr}%
+}
+\makeatother
+
+\begin{align*}
+  c_1 + c_2         & \triangleq \bound{l_1 + l_2}{u_1 + u_2}               \\
+  c_1 \cdot c_2     & \triangleq \bound{l_1 \cdot l_2}{u_1 \cdot u_2}       \\
+  c_1 \cup c_2      & \triangleq \bound{\min{(l_1, l_2)}}{\max{(u_1, u_2)}} \\
+  c_1 - c_2         & \triangleq \bound{l_1 - u_2}{u_1 - l_2}               \\
+  c_1 \dotminus c_2 & \triangleq \bound{l_1 - l_2}{u_1 - u_2}               \\
+\end{align*}
+
+\vspace{-4mm}
+
+Appendix \hyperref[sec:C]{C} provides more detail on how these definitions are derived, and describes how operations can be applied to individual costs (e.g. \( l_1 + l_2 \)). We recall from section \hyperref[sec:2.1.2]{2.1.2} that Kautuka only supports non-negative numbers, which simplifies our definitions for subtraction and multiplication. The union operator \( c_1 \cup c_2 \) produces the tightest bound which encapsulates both \( c_1 \) and \( c_2 \), and the change operator \( c_1 \dotminus c_2 \) returns the cost which can be added back to \( c_2 \) to obtain \( c_1 \).
+
+Our primitives include \textit{integers} and \textit{strings}, whose type costs are defined as their numerical values and lengths respectively. For brevity, \( \tau^\textrm{cost} \) is written as \( \tau \) and \( \Gamma^\textrm{cost} \) is written as \( \Gamma \). The remaining typing rules are listed in appendix \hyperref[sec:C]{C}.
+
+\vspace{5mm}
+
+\hspace*{-2cm}\begin{minipage}{.5\paperwidth}
+  \vspace{4mm}\begin{prooftree}
+    \AxiomC{\( \)}
+    \RightLabel{\((\emph{int})\)}
+    \UnaryInfC{\(\Gamma \vdash n : \textit{int}\bound{n}{n}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\text{len}(s) = n\)}
+    \RightLabel{\((\emph{string})\)}
+    \UnaryInfC{\(\Gamma \vdash s : \textit{string}\bound{n}{n}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{3mm}
+
+\hspace*{-2cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1) \)}
+    \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2) \)}
+    \RightLabel{\((\emph{add})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 + e_2 : \textit{int}(c_1 + c_2)\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1) \)}
+    \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2) \)}
+    \RightLabel{\((\emph{sub})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 - e_2 : \textit{int}(c_1 - c_2)\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{3mm}
+
+\hspace*{-2cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1) \)}
+    \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2) \)}
+    \RightLabel{\((\emph{mult})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 * e_2 : \textit{int}(c_1 \cdot c_2)\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-.65cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{string}(c_1) \)}
+    \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{string}(c_2) \)}
+    \RightLabel{\((\emph{concat})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 + e_2 : \textit{string}(c_1 + c_2)\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{5mm}
+
+However, it is impossible to statically estimate the size of user-I/O inputs without user intervention: programmers are required to supply an upper bound (and optionally a lower bound, \( 0 \) by default) as an argument to the I/O functions. For example \ignore{\mintinline{go}{input(n)}} returns a value upper bounded by \( n \) and lower bounded by \( 0 \), whereas \ignore{\mintinline{go}{input(n1, n2)}} returns a value with size bounds \( \bound{n_1}{n_2} \).
+
+\vspace{5mm}
+
+\hspace*{-2.8cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash n : \textit{int}\bound{n}{n} \)}
+    \RightLabel{\((\emph{input-1})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{input}(n) : \textit{int}\bound{0}{n}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.2cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash n_1 : \textit{int}\bound{n_1}{n_1} \)}
+    \AxiomC{\( \hspace{-0.4mm}\Gamma \vdash n_2 : \textit{int}\bound{n_2}{n_2} \)}
+    \AxiomC{\( \hspace{-1.8mm}n_1 \leq n_2 \)}
+    \RightLabel{\((\emph{input-2})\)}
+    \TrinaryInfC{\(\Gamma \vdash \textrm{input}(n_1, n_2) : \textit{int}\bound{n_1}{n_2}\)}
+  \end{prooftree}
+\end{minipage}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash f : \textit{file\_ref}\,(i, g) \)}
+  \AxiomC{\( \Gamma \vdash n : \textit{int}\bound{n}{n} \)}
+  \RightLabel{\((\emph{read-1})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{read}(f, n) : \textit{string}\bound{0}{n}\)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash f : \textit{file\_ref}\,(i, g) \)}
+  \AxiomC{\( \Gamma \vdash n_1 : \textit{int}\bound{n_1}{n_1} \)}
+  \AxiomC{\( \Gamma \vdash n_2 : \textit{int}\bound{n_2}{n_2} \)}
+  \AxiomC{\( \hspace{-1.5mm}n_1 \leq n_2 \)}
+  \RightLabel{\((\emph{read-2})\)}
+  \QuaternaryInfC{\(\Gamma \vdash \textrm{read}(f, n_1, n_2) : \textit{string}\bound{n_1}{n_2}\)}
+\end{prooftree}
+
+\vspace{5mm}
+
+\textbf{The rest of this section details the novel typing rules and algorithms I developed to infer cost-types in the presence of imperative control flow and functions.}
+
+An \textit{if-else} statement is a \textit{unit-type} expression, and so its typing rule depicts that it will always return \textit{unit}:
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{bool} \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{unit}  \)}
+  \AxiomC{\( \Gamma \vdash e_3 : \textit{unit} \)}
+  \RightLabel{\((\emph{if-else})\)}
+  \TrinaryInfC{\(\Gamma \vdash \textrm{if } e_1 \; \{ \, e_2 \, \} \textrm{ else } \{ \, e_3 \, \} : \textit{unit} \)}
+\end{prooftree}
+
+However, this typing rule does not change the typing context accordingly. The example below shows a case where the context may differ depending on the path taken:
+
+\begin{minted}{go}
+  x := 0 
+
+  if condition {
+    x += 1
+  } else {    
+    x += 2
+  }           
+\end{minted}
+
+The type-cost context now either contains \( x \mapsto \bound{1}{1} \) or \( x \mapsto \bound{2}{2} \), depending on which path was taken. The natural solution is for the context to encapsulate all possible paths taken: \( x \mapsto \bound{1}{1} \cup \bound{2}{2} = \bound{1}{2} \).
+
+To implement this, we start by taking the contexts at the end of both branches (\( \Gamma_\text{if} \) and \( \Gamma_\text{else} \)) and remove local variables declared within the branches. This ensures that both \( \Gamma_\text{if} \) and \( \Gamma_\text{else} \) have the same size (that is, contain the same variables in the same positions); the only variables that can be added to these contexts are local variables, which are subsequently removed. Hence, both contexts have corresponding mappings (e.g. \( y \mapsto \tau(c_1) \), \( y \mapsto \tau(c_2) \)), with the same variables and base types but potentially differing cost bounds. We lift the \textit{binary cost-bound operator} \( \cup \) to the context level, applying the operator to all corresponding cost bounds in the contexts. For example if \( \Gamma_\text{if} = \{ x: \textit{int}\bound{1}{1} \} \) and \( \Gamma_\text{else} = \{ x: \textit{int}\bound{2}{2} \} \) then \( \Gamma_\text{end} = \Gamma_\text{if} \, \cup \, \Gamma_\text{else} = \{ x: \textit{int}\bound{1}{2} \} \). \( \Gamma_\text{end} \) represents the context at the end of the \textit{if-statement}.
+
+\textit{For-loops} face similar problems, the typing rule for \textit{for-loops} (excluding context changes) is:
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1) \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{int}(c_2) \)}
+  \AxiomC{\( \Gamma \vdash e_3 : \textit{unit} \)}
+  \RightLabel{\((\emph{for-loop})\)}
+  \TrinaryInfC{\(\Gamma \vdash \textrm{for } x := e_1 \, ; \, x < e_2 \, ; \, x \! + \! + \; \{ \, e_3 \, \} : \textit{unit} \)}
+\end{prooftree}
+
+Consider a general \textit{for-loop}: \ignore{\mintinline{go}{for i := e1; i < e2; i++ { e3 }}}, with expression type costs \( e_1 : \textit{int}(c_1), \, e_2 : \textit{int}(c_2), \, e_3 : unit \) (assuming that \( e_2 \geq e_1 \)).  The number of iterations \( n \) is described with the cost bound \( n = c_2 - c_1 \). However, it is statically undecidable to determine \( n \)'s exact value as it can parameterised on unknown input sizes.
+
+The \textit{for-loop} starts with the context \( \Gamma_\text{start} \). We calculate the context after a single loop iteration \( \Gamma_\text{iter} \), where the iterator variable \( i \) has type cost \( \textit{int}(c_1 \cup c_2) \) to encapsulate both the upper and lower values of its range. Note that for Kautuka, this is sufficient to capture behaviour for all values of \( i \) within this bound (appendix \hyperref[sec:C]{C}). The change to the context \( \Gamma_\text{iter} \dotminus \Gamma_\text{start} \) is calculated by lifting the \textit{change operator} \( \dotminus \) from cost bounds to contexts. Hence, the change after \( n \) iterations is calculated by \( n \cdot (\Gamma_\text{iter} \dotminus \Gamma_\text{start}) \), where \( c \cdot \Gamma \) is defined as multiplying all cost bounds in \( \Gamma \) by the cost bound \( c \).
+
+However, this only represents an \textit{approximation} of the context change, struggling to handle cases where variables blow up exponentially (e.g. \ignore{\mintinline{go}{for i := e1; i < e2; i++ { x := x * x }}}). Harrison~\cite{harrison1977compiler} introduces techniques to handle a subset of these cases, however this analysis is outside the scope of the project. While this approximation limits the accuracy of our predictions, the majority of programs (especially those focused on I/O) do not exhibit exponential looping behaviour.
+
+The final context \( \Gamma_\text{end} \) is defined by adding the overall context change to the initial context: \( \Gamma_\text{end} = \textit{int}(c_2 - c_1) \cdot (\Gamma_\text{iter} \dotminus \Gamma_\text{start}) + \Gamma_\text{start} \). A full example is provided on the following code snippet:
+
+\begin{minted}{go}
+  ...  // Ğ= { total: int<0,0>, x: int<0,5> }
+
+  for i := x; i < x + 5; i++ { 
+    total += i
+  }
+\end{minted}
+
+For the single iteration, \( i \) has the type cost \( \textit{int}(c_1 \cup c_2) = \textit{int}(\bound{0}{5} \cup \bound{5}{10}) = \textit{int}\bound{0}{10} \). This produces the context change after a single iteration: \( \Gamma_\text{iter} = \{ \textit{total}: \textit{int}\bound{0}{10}, x: \textit{int}\bound{0}{5} \} \). Using the above formula, the final context value is:
+
+\begin{align*}
+  \Gamma_\text{end} & = \textit{int}(c_2 - c_1) \cdot (\Gamma_\text{iter} \dotminus \Gamma_\text{start}) + \Gamma_\text{start}                                                                                                                \\
+                    & = \textit{int}(\bound{5}{10} - \bound{0}{5}) \cdot (\{ \textit{total}: \textit{int}\bound{0}{10}, x: \textit{int}\bound{0}{5} \} \dotminus \{ \textit{total}: \textit{int}\bound{0}{0}, x: \textit{int}\bound{0}{5} \}) \\
+                    & \ \ \ + \{ \textit{total}: \textit{int}\bound{0}{0}, x: \textit{int}\bound{0}{5} \}                                                                                                                                     \\
+                    & = \textit{int}\bound{0}{10} \cdot \{ \textit{total}: \textit{int}\bound{0}{10}, x: \textit{int}\bound{0}{0} \} + \{ \textit{total}: \textit{int}\bound{0}{0}, x: \textit{int}\bound{0}{5} \}                            \\
+                    & = \{ \textit{total}: \textit{int}\bound{0}{100}, x: \textit{int}\bound{0}{0} \} + \{ \textit{total}: \textit{int}\bound{0}{0}, x: \textit{int}\bound{0}{5} \}                                                           \\
+                    & = \{ \textit{total}: \textit{int}\bound{0}{100}, x: \textit{int}\bound{0}{5} \}
+\end{align*}
+
+Which statically tells us that \textit{total} must be between 0 and 100 at the end of this loop.
+
+Latent effect rules for type-cost systems (section \hyperref[sec:2.5.2]{2.5.2}) describes how each function (returning a sized type) generates a mapping from its input sizes to its output size. When calling these functions, we look up this mapping and pass in the input sizes.
+
+\vspace{2mm}
+
+\((\emph{def-func-2})\):
+
+\vspace{-2mm}
+
+\hspace*{-2cm}\begin{minipage}{1.0\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(x_1: \tau_1(c_1), \, \ldots \,, x_n : \tau_n(c_n), \Gamma \vdash e : \tau_\textrm{sized}(c) \)}
+    \AxiomC{\((g: \tau_1^\textrm{base} * \cdots * \tau_n^\textrm{base} \xrightarrow{g_\textit{size}(c_1, \ldots, c_n) = c} \tau^\textrm{base}), \Gamma \vdash e^\prime : \tau^\prime \)}
+    \RightLabel{}
+    \BinaryInfC{\(\Gamma \vdash (\textrm{def } g(x_1: \tau_1^\textrm{base}, \, \ldots \, , x_n: \tau_n^\textrm{base}) \; \tau^\textrm{base} \; \{ \, e \, \} ; \, e^\prime) : \tau^\prime \)}
+  \end{prooftree}
+\end{minipage}%
+
+\vspace{5mm}
+
+Note that if expression \( e \) in \emph{(def-func-2)} returns multiple values\footnote{\( e \) must contain at least one return statement as the return statement of the function is \textit{sized}, and hence \textit{non-unit}.} of sizes \( c', c'', \ldots, c^{(n)} \), then the size of \( e \) is defined as \( c = c' \cup c'' \cup \cdots \cup c^{(n)} \).
+
+\newpage 
+
+\((\emph{apply-func-2})\):
+
+\vspace{-5mm}
+
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash g: (\tau_1^\textrm{base} * \cdots * \tau_n^\textrm{base}) \xrightarrow{g_\textit{size}(c_1, \ldots, c_n) = c} \tau^\textrm{base}\)}
+  \AxiomC{\( \Gamma \vdash e_1 : \tau_1(c_1) \hspace{5mm} \cdots \hspace{5mm} \Gamma \vdash e_n : \tau_n(c_n) \)}
+  \RightLabel{}
+  \BinaryInfC{\( \Gamma \vdash g(e_1, \ldots, e_n) : \tau_\textrm{sized}(g_\textit{size}(c_1, \ldots, c_n)) \)}
+\end{prooftree}
+
+
+\vspace{3mm}
+
+We recall the following example of type-cost inference from section \hyperref[sec:2.1.3]{2.1.3}, noting that exact values are provided as opposed to bounds.
+
+\begin{minted}{go}
+  // f_size(a) = a + 1 (maps input size to output size)
+  func f(a int) int { 
+    return a + 1
+  }
+
+  func g(x int, y int) int { 
+
+    {
+      z := f(x)   // Size of z = f_size(x) = x + 1
+      print(z)
+    } 
+
+    {
+      y = x + 10  // Size of y = x + 10 
+    }
+
+  }
+\end{minted}
+
+\subsection{Runtime-Cost Analysis}
+
+\label{sec:3.5.2}
+
+\textit{Static profiling} estimates the runtime of each instruction, as a function of their input sizes. By measuring instruction runtimes for various input sizes, we produce accurate \textit{instruction runtime estimates}. A list of instruction runtime estimates (produced by my machine) are provided in appendix \hyperref[sec:D]{D}.
+
+The runtime-cost system uses these estimates to generate \textit{expression runtime estimates}. In general, the runtime of an expression is the sum of its sub-expression runtimes plus the top-level instruction runtime. For example \ignore{\mintinline{go}{e_1 + e_2}} takes \( (r_1 + r_2 + \text{ADD}(c_1, c_2)) \mu s\) where \( e_1 : \textit{int}(c_1), \, e_2 : \textit{int}(c_2) \) and the runtimes of \( e_1 \) and \( e_2 \) are \( r_1 \) and \( r_2 \). A representative subset of these typing rules are provided below, with the remainder listed in appendix \hyperref[sec:D]{D}.
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1), r_1 \)}
+  \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2), r_2 \)}
+  \RightLabel{\((\emph{add})\)}
+  \BinaryInfC{\(\Gamma \vdash e_1 + e_2 : \textit{int}(c_1 + c_2), r_1 + r_2 + \text{ADD}(c_1, c_2) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1), r_1 \)}
+  \AxiomC{\( \hspace{-3mm}\Gamma \vdash e_2 : \textit{int}(c_2), r_2 \)}
+  \RightLabel{\((\emph{mult})\)}
+  \BinaryInfC{\(\Gamma \vdash e_1 * e_2 : \textit{int}(c_1 \cdot c_2), r_1 + r_2 + \text{MULT}(c_1, c_2) \)}
+\end{prooftree}
+
+\textit{If-statements} compute the maximum runtime of both branches using the \( \cup \) operator. \textit{For-loops} calculate the runtime of all iterations by multiplying the runtime of a single loop iteration (plus a comparison and increment operation) by the number of iterations. \( \text{IF}() \) and \( \text{FOR\_LOOP}() \) refer to extra costs incurred by initialising the control structures.
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{bool}, r_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{unit}, r_2   \)}
+  \AxiomC{\( \Gamma \vdash e_3 : \textit{unit}, r_3 \)}
+  \RightLabel{\((\emph{if-else})\)}
+  \TrinaryInfC{\(\Gamma \vdash \textrm{if } e_1 \; \{ \, e_2 \, \} \textrm{ else } \{ \, e_3 \, \} : \textit{unit}, r_1 + ( r_2 \cup r_3 ) + \text{IF}()\)}
+\end{prooftree}
+
+\hspace*{-2cm}\begin{minipage}{1.0\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{int}(c_1), r_1 \)}
+    \AxiomC{\( \Gamma \vdash e_2 : \textit{int}(c_2), r_2 \)}
+    \AxiomC{\( \Gamma \vdash e_3 : \textit{unit}, r_3 \)}
+    \RightLabel{\((\emph{for-loop})\)}
+    \TrinaryInfC{\stackanchor[1mm]{\(\Gamma \vdash \textrm{for } x := e_1 \, ; \, x < e_2 \, ; \, x \! + \! + \; \{ \, e_3 \, \} : \textit{unit},\)}{\( r_1 + r_2 + (c_2 - c_1) \cdot (r_3 + \text{LE}(c_2 - c_1, c_2) + \text{INC}(c_2 - c_1)) + \text{FOR\_LOOP}() \)}}
+  \end{prooftree}
+\end{minipage}%
+
+\vspace{5mm}
+
+The function typing rules below follow similarly from those in type-cost analysis.
+
+\vspace{2mm}
+
+\((\emph{def-func-1})\):
+
+\vspace{-2mm}
+
+\hspace*{-2cm}\begin{minipage}{1.0\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(x_1: \tau_1(c_1), \, \ldots \,, x_n : \tau_n(c_n), \Gamma \vdash e : \tau_\textrm{unsized}, r \)}
+    \AxiomC{\((g: \tau_1^\textrm{base} * \cdots * \tau_n^\textrm{base} \xrightarrow{g_\textit{runtime}(c_1, \ldots, c_n) = r} \tau^\textrm{base}), \Gamma \vdash e^\prime : \tau^\prime, r' \)}
+    \RightLabel{}
+    \BinaryInfC{\(\Gamma \vdash (\textrm{def } g(x_1: \tau_1^\textrm{base}, \, \ldots \, , x_n: \tau_n^\textrm{base}) \; \tau^\textrm{base} \; \{ \, e \, \} ; \, e^\prime) : \tau^\prime, r' \)}
+  \end{prooftree}
+\end{minipage}%
+
+\vspace{5mm}
+
+\((\emph{apply-func-1})\):
+
+\vspace{-10mm}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash g: (\tau_1^\textrm{base} * \cdots * \tau_n^\textrm{base}) \xrightarrow{g_\textit{runtime}(c_1, \ldots, c_n) = r} \tau^\textrm{base}\)}
+  \AxiomC{\( \Gamma \vdash e_1 : \tau_1(c_1), r_1 \hspace{5mm} \cdots \hspace{5mm} \Gamma \vdash e_n : \tau_n(c_n), r_n \)}
+  \RightLabel{}
+  \BinaryInfC{\( \Gamma \vdash g(e_1, \ldots, e_n) : \tau_\textrm{unsized}, (r_1 + \cdots + r_n + g_\textit{runtime}(c_1 + \cdots + c_n) + \text{FUNC\_CALL}())\)}
+\end{prooftree}
+
+With this knowledge, we review the example of runtime-cost analysis presented in section \hyperref[sec:2.1.3]{2.1.3}. The instruction runtimes can be summarised with \( \text{ADD}(a, b) = 2a + 2b \) and \( \text{PRINT}(a) = 100a \), where all other instructions take no time.
+
+\begin{minted}{go}
+  // f_runtime(a) = 2a + 2 (maps input size to runtime)
+  func f(a int) int { 
+    return a + 1
+  }
+
+  func g(x int, y int) int { 
+
+    // Runtime expression = 102x + 102
+    {
+      z := f(x)   // Runtime = f_runtime(x) = 2x + 2
+      print(z)    // Runtime = 100 * f_size(z) = 100(x + 1) = 100x + 100
+    }             
+
+    // Runtime expression = 2x + 20 
+    {
+      y = x + 10  // Runtime = 2x + 2(10) = 2x + 20 
+    }
+
+  }
+\end{minted}
+
+\textbf{Key Takeaway.} \textit{Type-cost inference annotates each expression with their type cost. Runtime-cost inference builds on top of this analysis, annotating each code block with their estimated runtime. The algorithms presented in this section overcome challenges posed by implementing cost analysis in the context of imperative languages.}
+
+\section{Parallelisation}
+
+\vspace{-1mm}
+
+\label{sec:3.6}
+
+Sequential, non-interfering code blocks can be re-ordered and parallelised in multiple ways, in a process known as \textit{clustering}. For example, if sequential blocks \ignore{\mintinline{go}{A; B; C}} all contain non-interfering side effects, then they can be re-ordered (e.g. \ignore{\mintinline{go}{C; A; B}}) and then parallelised (e.g. \ignore{\mintinline{go}{(C | A); B}} and \ignore{\mintinline{go}{C | A | B}}) in any way. The notation \ignore{\mintinline{go}{X; Y}} represents the sequential execution of blocks \ignore{\mintinline{go}{X}} and \ignore{\mintinline{go}{Y}}, and \ignore{\mintinline{go}{X | Y}} represents their parallel execution. However, this process becomes more complex when block side effects do interfere, especially since interference is non-transitive. Section \hyperref[sec:3.6.1]{3.6.1} presents an algorithm to cluster blocks, optimising their performance under certain assumptions.
+
+Section \hyperref[sec:3.6.2]{3.6.2} describes how to translate clustered blocks into Go, introducing \ignore{\texttt{sync}} instructions to block program execution until all threads have terminated.
+
+\vspace{-1mm}
+
+\subsection{Re-order and Parallelise Code Blocks}
+
+\vspace{-1mm}
+
+\label{sec:3.6.1}
+
+It is impossible to evaluate \textit{runtime-cost expressions} at compile time, as they can be parameterised on unknown input sizes. This means we cannot infer any information about code-block runtimes without analysing all function call sites. So during clustering, we assume all code-block runtimes to be the same. Whilst this assumption may appear unfavourable, this introduces the highest degree of parallelisation into clustering --- providing near-optimal performance in the majority of cases.
+
+A \textit{parallelisation group} consists of blocks executed in parallel (\ignore{\mintinline{go}{A | B | ... }}). By interleaving parallelisation groups and sequential execution (e.g., \ignore{\mintinline{go}{((A | B); C) | D}}), we produce \textit{multi-layer parallelisation groups}. However, runtime-cost expressions are evaluated at each sequential layer, so the number of evaluations scales \( \mathcal{O}(n) \) with the number of blocks. Whilst runtime-cost expressions are cheap, if evaluated multiple times in the same cluster they becomes non-negligible. Hence, we constrain ourselves to only single-level parallelisation groups, consisting of sequentially executed parallelisation groups (e.g. \ignore{\mintinline{go}{(A | B); C; (D | E)}}), so that the number of evaluations instead scales \( \mathcal{O}(1) \) with the number of blocks.
+
+Our clustering algorithm is performed under these assumptions, which lets us approximate a cluster's runtimes as \textit{the number of parallelisable groups} it contains. For example \ignore{\mintinline{go}{(A | B); C; (D | E)}} contains three sequentially-executed parallelisation groups, resulting in the approximate runtime: \( 3 \).
+
+If two blocks have \textit{non-interfering} side effects, they can be re-ordered and parallelised. Choosing the \textbf{optimal} clustering (under our assumptions) is difficult as there are an \textbf{exponential} number of valid allocations. Picking the allocation with the ``most parallelisation'' is challenging, as placing a block into a parallelisation group limits which other blocks can be placed into that group. This initially looks like a \textit{dynamic programming} problem, however I devised a \textit{greedy algorithm} which also produces an optimal solution by exploiting properties of non-interference. A clustering example can be seen below:
+
+\begin{figure}[!h]
+  \begin{minted}{go}
+  ...
+  { x = 0 } // Block A   { W : var(x) }
+  { y = 0 } // Block B   { W : var(y) }
+  { x = 0 } // Block C   { W : var(x) }
+  { z = 0 } // Block D   { W : var(z) }
+  { z = 0 } // Block E   { W : var(z) }
+\end{minted}
+  \label{fig:example-blocks}
+  \vspace{-4mm}
+  \caption{An example of sequential blocks with interfering side effects.}
+\end{figure}
+
+\newpage 
+
+Naive clustering: \ignore{\mintinline{go}{(A | B); (C | D); E}}, runtime \(= 3 \)
+
+Optimal clustering: \ignore{\mintinline{go}{(A | B | D); (C | E)}}, runtime \(= 2\)
+
+\vspace{3mm}
+
+A \textit{block list} contains a list of sequential blocks paired with their side-effect sets. From the example in fig. \hyperref[fig:example-blocks]{3.2}, we derive the block list:
+
+\vspace{2mm}
+
+\ignore{\mintinline{go}{[(A,{W:var(x)}),(B,{W:var(y)}),(C,{W:var(x)}),(D,{W:var(z)}),(E,{W:var(z)})]}}
+
+\vspace{2mm}
+
+The clustering algorithm works by passing over the block list multiple times. Each pass initialises an empty parallelisation group and an empty accumulator side-effect set \( f \). As we iterate over the list, if a block's side effects are non-interfering with \( f \), we extract the block from the list and place it into the parallelisation group. We then add its side effects to \( f \) (no matter if it was extracted or not). At the end of the list, we add the parallelisation group to a \textit{parallelisation list}. Once the block list is empty, the program terminates. The parallelisation list now contains an optimal clustering of parallelisation groups, in the form:
+
+\begin{minted}{go}
+  par_list = [
+               [A, B, D],
+               [C, E]
+             ]
+\end{minted}
+
+Appendix \hyperref[sec:E]{E} presents a proof sketch for why this algorithm is \textit{optimal}.
+
+\begin{algorithm}[hbt!]
+  \caption{Cluster Blocks into Parallelisable Groups}\label{alg:one}
+  \KwData{\textit{block\_list}}
+  \KwResult{\textit{par\_list}}
+
+  \BlankLine
+
+  \textit{par\_list} \( \gets [ \, ] \)\;
+
+  \BlankLine
+
+  \While{not block\_list.is\_empty()} {
+
+    \BlankLine
+
+    \( f \gets \{ \} \)\;
+    \textit{par\_group} \( \gets [] \)\;
+
+    \BlankLine
+
+    \For{\(A, f' \) in block\_list} {
+      \If{\(f' \: \# \: f \) } {
+        \textit{par\_group.append}\( (A) \)\;
+      }
+      \( \textit{f} \gets \textit{f} \, \cup f' \)\;
+    }
+    \textit{par\_list.append \( \! ( \)par\_group\( ) \)}\;
+  }
+\end{algorithm}
+
+
+\subsection{Translate to Parallelised Go Code}
+
+\label{sec:3.6.2}
+
+The main difficultly when translating the AST into Go is the treatment of parallelised blocks. We recall that parallelised blocks compile to both their sequential and parallel forms; the form executed depends on the evaluation of \textit{runtime-cost expressions}. Runtime-cost expression can be transliterated from theory into code, Kautuka contains corresponding variables and operations to those used in the dependent cost calculus (appendix \hyperref[sec:C]{C}).
+
+The previous section outlines the algorithm which clusters blocks into parallelisation groups, for example producing the parallelisation list:
+
+\begin{minted}{go}
+  par_list = [
+               [A, B, D],
+               [C, E]
+             ]
+\end{minted}
+
+The \textit{sequential form} is represented as \ignore{\mintinline{go}{A; B; D; C; E}} (or equivalently \ignore{\mintinline{go}{A; B; C; D; E}}) and \textit{parallelised form} as \ignore{\mintinline{go}{(A | B | D); (D | E)}}. The latter consists of two parallelisation groups (\ignore{\mintinline{go}{A, B, D}} and \ignore{\mintinline{go}{C, E}}).
+
+\begin{minted}{go}
+  // Parallelisation group 1
+  {
+    go func() { 
+      A
+    }()
+
+    go func() { 
+      B
+    }()
+
+    go func() { 
+      D
+    }()
+  }
+
+  // Parallelisation group 2 
+  {
+    go func() { 
+      C
+    }()
+
+    go func() { 
+      E
+    }() 
+  }
+\end{minted}
+
+However, the above code does nothing to prevent program execution from continuing after \textit{parallelisation group 1}, as goroutine threads are run in the background. Hence, blocks \ignore{\mintinline{go}{C}} and \ignore{\mintinline{go}{E}} could be executed alongside blocks \ignore{\mintinline{go}{A, B, C}}, producing a \textit{race}. To enforce sequential execution of parallelised groups, execution is \textit{blocked} at the end of a group until all goroutines have terminated. This is achieved using Go's \ignore{\texttt{sync}} package, specifically the \ignore{\texttt{WaitGroup}} object: an asynchronous counter object containing \ignore{\texttt{Add}}, \ignore{\texttt{Wait}}, and \ignore{\texttt{Done}} methods. To parallelise \( n \) blocks, we \ignore{\texttt{Add}} the integer \( n \) to the \ignore{\texttt{WaitGroup}} counter. At the end of each block, the \ignore{\texttt{Done}} method is called to decrease the counter by one. The \ignore{\texttt{Wait}} method is placed at the end of the \textit{parallelisable group}: it blocks execution until the counter is zero (all goroutines have terminated). The following example shows the parallelisation of code blocks \ignore{\mintinline{go}{A}} and \ignore{\mintinline{go}{B}} (with runtime costs \( r_a \) and \( r_b \), and a constant parallelisation cost \( r_p \)).
+
+\newpage 
+
+\begin{minted}{go}
+  // if sequential_runtime < parallel_runtime + parallelisation_costs
+  if r_a + r_b < min(r_a, r_b) + r_p { 
+    // Sequential execution 
+    A; 
+    B;
+  } else { 
+
+    // Parallel execution 
+    var wg sync.WaitGroup // Initialise async counter 
+    wg.Add(2) // Set counter to 2: 2 threads left to complete 
+
+    go func() { // Spawn goroutine
+      A; // Runs code block
+      wg.Done() // Marks thread complete
+    }() // Invoke goroutine
+
+    go func() { 
+      B; 
+      wg.Done()
+    }() 
+
+    wg.Wait() // Wait until counter reaches 0
+              // (all threads have termined and we can continue)
+  }           
+\end{minted}
+
+\textbf{Key Takeaway.} \textit{Adjacent code blocks are parallelised \textbf{optimally} using a greedy clustering algorithm (section \hyperref[sec:3.6.1]{3.6.1}). Parallelisation is implemented into Go using goroutines, using \ignore{\texttt{WaitGroups}} to block program execution until all threads in a parallelised group have terminated (section \hyperref[sec:3.6.2]{3.6.2}).}
+
+\section{Summary}
+
+\label{sec:3.7}
+
+The compiler's implementation builds upon the effect systems presented in the preparation chapter. Section \hyperref[sec:3.4]{3.4} presents a concrete implementation of side-effect tracking in Kautuka, utilising file-reference aliasing and introducing a \textit{non-interference} operator to describe whether parallelisation is \textit{safe}. Section \hyperref[sec:3.5]{3.5} implements cost analysis, with a powerful inference algorithm to estimate expression runtimes. This analysis guides parallelisation in section \hyperref[sec:3.6]{3.6} when translating the AST into Go. However, the author wishes to reiterate that the majority of this work is \textit{language agnostic}, generalising well to other imperative programming languages.

@@ -1,0 +1,58 @@
+%TC:envir minted 1 xall 
+%TC:envir algorithmic 1 xall
+
+% Include tables in word count
+%TC:envir table 0 word
+%TC:envir tabular 1 word
+
+% Include footnotes in word count
+%TC:macro \footnote [text]
+%TC:macro \footnotetext [text]
+
+%TC:group minted 0 0
+%TC:macro \mintinline [ignore]
+%TC:macro \colb [ignore]
+%TC:macro \hyperref [ignore]
+
+\label{sec:5}
+
+The project was a success. I exceeded all core success criteria and completed the majority of proposed extensions. The project's objective was to create a mid-featured, imperative programming language with a corresponding high-level automatic parallelisation compiler. I implemented both components successfully, ensuring that resultant parallel code was both \textit{safe} and \textit{efficient}. To the best of the author's knowledge, this is the first automatic parallelisation compiler for an imperative language which employs both side-effect tracking and cost analysis. This project highlights potential performance improvements in imperative languages, achieved through high-level automatic parallelisation.
+
+Evaluating my project (using my three research questions as a basis) yielded positive results: 
+
+\begin{enumerate}[leftmargin=8mm]
+  \setlength{\itemindent}{-3mm}
+
+  \item \textit{Transfer automatic-parallelisation theory from functional to imperative languages}
+
+  I faced various challenges when implementing automatic-parallelisation theory into an imperative language. To overcome these challenges, I devised \textbf{novel typing rules and algorithms}, which describe how to perform cost analysis in the presence of imperative-style functions and control flow (section \hyperref[sec:3.5]{3.5}). My solutions successfully preserve the \textit{safety} of side-effect tracking and the \textit{accuracy} of cost analysis (section \hyperref[sec:4.2]{4.2}).
+
+  \item \textit{Investigate the performance of high-level parallelisation on I/O-bound programs}
+    
+  Benchmarking Kautuka against Go on a corpus of I/O-bound programs provided empirical evidence that \textbf{Kautuka outperforms Go} (section \hyperref[sec:4.3]{4.3}).
+
+  \item \textit{Investigate real-world applications of the compiler}
+    
+  Powerful inferences algorithms (section \hyperref[sec:3.5]{3.5}) allowed me to translate hundreds of lines of Go into Kautuka with \textbf{minimal programmer overhead}. This demonstrates that Kautuka can seamlessly integrate into existing Go workflows using my compiler tooling (section \hyperref[sec:4.4]{4.4}).
+  
+\end{enumerate}
+
+\section{Lessons Learnt}
+
+\label{sec:5.1}
+
+A significant proportion of the project's focus was on \textit{exploration}, with the majority of time allocated to designing and implementing new algorithms, as opposed to building upon existing work. Whilst rewarding, the research required a substantial initial time investment which I failed to account for in my original timetable. Fortunately, I allocated sufficient slack time to avoid project delays. However, more careful planning would have prevented me deviating from my planned schedule.
+
+I initially intended to implement the entire project with a \textit{spiral development model}. However, I quickly discovered that each compiler stage was heavily dependent on its previous stages, hindering my ability to make incremental iterations. So, despite initial reservations, I used the \textit{waterfall model} for the core project development. I originally avoided this model due to its \textit{inflexibility}, but in reality I found this model to be very effective as all project requirements and deadlines were all fixed in advance. Writing pseudocode for all core components (before starting development) allowed me to commit to design decisions early on, without regretting them at later waterfall stages. This taught me that inflexible development models can be more effective than flexible models in projects where the scope is fixed.
+
+Implementing the type-cost system took significantly longer than expected. The effect system's design was dependent on complex \textit{cost} definitions (appendix \hyperref[sec:C]{C}), which were challenging to implement. On reflection, it would have been beneficial to constrain the core criteria's scope as I now believe it to be ambitious for the time frame provided. Developing a full type-cost system could have been implemented as a stretch goal rather than as part of the core requirements.
+
+\section{Future Work}
+
+\label{sec:5.2}
+
+This project demonstrates that high-level automatic parallelisation\footnote{Using side-effect tracking and cost analysis.} of imperative programs is not only feasible, but also outperforms equivalent sequential code on I/O-bound programs. The natural extension would be to integrate automatic parallelisation into an industry-standard imperative language, such as Go. Common use cases for Go include developing web servers and distributed network applications, which are inherently I/O bound. This suggests that Go is a prime candidate for high-level automatic parallelisation --- with many core ideas of language having already been discussed throughout the dissertation.
+
+Kautuka does not currently support negative numbers, however these pose no fundamental theoretical limitations. Implementing negative numbers requires us to extend the \textit{dependent cost calculus} with \textit{min} and \textit{max} operators. The calculus can be enriched further to support real numbers and operations such as division and modulus. However, doing so would increase the complexity of the calculus, spawning a trade-off between expressivity and the evaluation time of \textit{runtime-cost expressions}. Extending the calculus whilst exploring this trade-off would be an interesting direction for future work.
+
+A more explorative research direction would be to model data-type sizes as probability distributions, rather than relying on upper and lower bounds. This presents new optimisation opportunities, such as branch prediction, not investigated during this project. Probabilistic models would generate more accurate and meaningful runtime estimates, improving the efficiency of produced parallel code. 

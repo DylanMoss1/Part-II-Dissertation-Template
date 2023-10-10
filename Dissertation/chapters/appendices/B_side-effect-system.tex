@@ -1,0 +1,378 @@
+\label{sec:B}
+
+\section*{Typing Judgement}
+
+The side-effect system typing judgement takes the form:
+
+\[ \Gamma^\textrm{se} \vdash e : \tau^\textrm{se}, f \]
+
+where
+
+\vspace{2mm}
+
+\( \tau^\textrm{se} \): base types enriched with latent side effects
+
+\( f \in \mathscr{P}(\mathit{Side\text{-}Effect}) \): side-effect set
+
+\( \tau^\textrm{se}, f \): representation of immediate and latent side effects
+
+\( \Gamma^\textrm{se} \): mapping from variables to \( \tau^\textrm{se} \)
+
+\vspace{-1mm}
+
+\section*{Typing Rules}
+
+\vspace{-3mm}
+
+For brevity, we write \( \tau^\textrm{se} \) as \( \tau \) and \( \Gamma^\textrm{se} \) as \( \Gamma \). Note that these rules also capture file-reference tracking if we consider file references with different identifiers and groups (e.g. \( \textit{file\_ref}\,(i_1, g_1) \) and \( \textit{file\_ref}\,(i_2, g_2) \)) to be of the same type.
+\vspace{3mm}
+
+% int, bool, string 
+
+\hspace*{-1.5cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{int})\)}
+    \UnaryInfC{\(\Gamma \vdash n : \textit{int}, \{ \} \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{bool})\)}
+    \UnaryInfC{\(\Gamma \vdash b : \textit{bool}, \{ \} \)}
+  \end{prooftree}
+\end{minipage}
+\hspace*{-1cm}\begin{minipage}{.33\paperwidth}
+  \begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{string})\)}
+    \UnaryInfC{\(\Gamma \vdash s : \textit{string}, \{ \} \)}
+  \end{prooftree}
+\end{minipage}
+
+% add, multiply, subtract, concat
+
+\vspace{3mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\((\emph{add})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 + e_2 : \textit{int}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\((\emph{mult})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 * e_2 : \textit{int}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{2mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\((\emph{sub})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 - e_2 : \textit{int}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{string}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{string}, f_2\)}
+    \RightLabel{\((\emph{concat})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1 + e_2 : \textit{string}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}
+
+% lt, le, gt, ge, and, or, not, eq, neq, () 
+
+\vspace{2mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\( ( < ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 < e_2 : \textit{bool}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\( ( \le ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 <= e_2 : \textit{bool}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{2mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\( ( > ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 > e_2 : \textit{bool}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\( ( \ge ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 >= e_2 : \textit{bool}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{2mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\( ( = ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 == e_2 : \textit{bool}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{int}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{int}, f_2\)}
+    \RightLabel{\( ( \neq ) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 \: !\!= e_2 : \textit{bool}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{2mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{bool}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{bool}, f_2\)}
+    \RightLabel{\( (\land) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 \: \&\& \: e_2 : \textit{bool}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \textit{bool}, f_1\)}
+    \AxiomC{\(\Gamma \vdash e_2 : \textit{bool}, f_2\)}
+    \RightLabel{\( (\lor) \)}
+    \BinaryInfC{\(\Gamma \vdash e_1 \: || \: e_2 : \textit{bool}, f_1 \cup f_2\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{1mm}
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e : \textit{bool}, f\)}
+    \RightLabel{\( (\neg) \)}
+    \UnaryInfC{\(\Gamma \vdash \: ! e : \textit{bool}, f \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e : \tau, f\)}
+    \RightLabel{\((\emph{paren})\)}
+    \UnaryInfC{\(\Gamma \vdash ( e ) : \tau, f \)}
+  \end{prooftree}
+\end{minipage}
+
+% x, =, :=, (_ = e)
+
+\hspace*{-1.9cm}\begin{minipage}{.5\paperwidth}
+  \vspace{4mm}
+  \begin{prooftree}
+    \AxiomC{}
+    \RightLabel{\((\emph{var-read})\)}
+    \UnaryInfC{\(\Gamma[x : \tau] \vdash x : \tau, \{\textsc{r}, \text{var}(x)\}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.7cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\(\Gamma \vdash e_1 : \tau_1, f_1 \)}
+    \AxiomC{\((x: \tau_1), \Gamma \vdash e_2 : \tau_2, f_2 \)}
+    \RightLabel{\((\emph{var-declare})\)}
+    \BinaryInfC{\(\Gamma \vdash x := e_1; \, e_2 : \tau_2, (f_1 \cup f_2) \)}
+  \end{prooftree}
+\end{minipage}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma \vdash e_1 : \tau_1, f_1 \)}
+  \AxiomC{\((x: \tau_1), \Gamma \vdash e_2 : \tau_2, f_2 \)}
+  \RightLabel{\((\emph{var-assign})\)}
+  \BinaryInfC{\(\Gamma[x : \tau_1] \vdash x = e_1; \, e_2 : \tau_2, (f_1 \cup f_2 \cup \{(\textsc{w}, \text{var}(x))\}) \)}
+\end{prooftree}
+
+% (e1; e2), {}  
+
+\hspace*{-1.8cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e_1 : \textit{unit}, f_1 \) }
+    \AxiomC{\( \Gamma \vdash e_2 : \tau, f_2 \) }
+    \RightLabel{\((\emph{seq})\)}
+    \BinaryInfC{\(\Gamma \vdash e_1; e_2 : \tau, f_1 \cup f_2 \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.6cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{unit}, f \)}
+    \RightLabel{\((\emph{block}\,\footnotemark{})\)}
+    \UnaryInfC{\(\Gamma \vdash \{ e \}_{ \{ x, y, \ldots, z \} } : \textit{unit}, f \setminus \{ x, y, \ldots, z \} \)}
+  \end{prooftree}
+\end{minipage}
+
+% if, if-else, for-loop, for-each 
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{bool}, f_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{unit}, f_2 \)}
+  \RightLabel{\((\emph{if})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{if } e_1 \; \{ \, e_2 \, \} : \textit{unit}, (f_1 \cup f_2) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{bool}, f_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{unit}, f_2 \)}
+  \AxiomC{\( \Gamma \vdash e_3 : \textit{unit}, f_3 \)}
+  \RightLabel{\((\emph{if-else})\)}
+  \TrinaryInfC{\(\Gamma \vdash \textrm{if } e_1 \; \{ \, e_2 \, \} \textrm{ else } \{ \, e_3 \, \} : \textit{unit}, (f_1 \cup f_2 \cup f_3) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{int}, f_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{int}, f_2 \)}
+  \AxiomC{\( \Gamma \vdash e_3 : \textit{unit}, f_3 \)}
+  \RightLabel{\((\emph{for-loop})\)}
+  \TrinaryInfC{\(\Gamma \vdash \textrm{for } x := e_1 \, ; \, x < e_2 \, ; \, x \! + \! + \; \{ \, e_3 \, \} : \textit{unit}, (f_1 \cup f_2 \cup f_3) \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{string}, f_1 \)}
+  \AxiomC{\( (x: \textit{string}), \Gamma \vdash e_2 : \textit{unit}, f_2 \)}
+  \RightLabel{\((\emph{for-each})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{for } x := \text{range } e_1 \, \{ \, e_2 \, \} : \textit{unit}, (f_1 \cup f_2) \)}
+\end{prooftree}
+
+% print, input-1, input-2, open, read, write, append 
+
+\hspace*{-1.5cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}, f \)}
+    \RightLabel{\((\emph{print})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{print}(e) : \textit{unit}, f \cup \{(\textsc{w}, \text{console})\}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{ \( \Gamma \vdash n : \textit{int}, \{ \} \) }
+    \RightLabel{\((\emph{input-1})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{input}(n) : \textit{string}, \{(\textsc{w}, \text{console})\}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{3mm}
+
+\hspace*{-1cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{ \( \Gamma \vdash n_1 : \textit{int}, \{ \} \) }
+    \AxiomC{ \( \hspace{-6mm}\Gamma \vdash n_2 : \textit{int}, \{ \} \) }
+    \AxiomC{\( \hspace{-3mm}\hspace{-1.8mm}n_1 \leq n_2 \)}
+    \RightLabel{\((\emph{input-2})\)}
+    \TrinaryInfC{\(\Gamma \vdash \textrm{input}(n_1, n_2) : \textit{string}, \{(\textsc{w}, \text{console})\}\)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.3cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}, f \)}
+    \RightLabel{\((\emph{open-1}\,\footnotemark{})\)}
+    \UnaryInfC{\(\Gamma \vdash \textrm{open}(e) : \textit{file\_ref}\,(i', g'), f \)}
+  \end{prooftree}
+\end{minipage}
+
+\addtocounter{footnote}{-1}
+
+\vspace{3mm}
+
+\hspace*{-2.2cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{string}, f \)}
+    \AxiomC{\( \Gamma \vdash n : \textit{int}, \{ \} \)}
+    \RightLabel{\((\emph{open-2}\,\footnotemark{})\)}
+    \BinaryInfC{\(\Gamma \vdash \textrm{open}(e, n) : \textit{file\_ref}\,(i', n), f \)}
+  \end{prooftree}
+\end{minipage}%
+\hspace*{-1.1cm}\begin{minipage}{.5\paperwidth}
+  \begin{prooftree}
+    \AxiomC{\( \Gamma \vdash e : \textit{file\_ref}\,(i, g), f \)}
+    \AxiomC{\( \Gamma \vdash n : \textit{int}, \{ \} \)}
+    \RightLabel{\((\emph{file-read-1})\)}
+    \BinaryInfC{\(\Gamma \vdash \textrm{read}(e, n) : \textit{string}, f \cup \{(\textsc{r}, \text{file}(i, g))\}\)}
+  \end{prooftree}
+\end{minipage}
+
+\vspace{3mm}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e : \textit{file\_ref}\,(i, g), f \)}
+  \AxiomC{\( \Gamma \vdash n_1 : \textit{int}, \{ \} \)}
+  \AxiomC{\( \Gamma \vdash n_2: \textit{int}, \{ \} \)}
+  \AxiomC{\( \hspace{-1.8mm}n_1 \leq n_2 \)}
+  \RightLabel{\((\emph{file-read-2})\)}
+  \QuaternaryInfC{\(\Gamma \vdash \textrm{read}(e, n_1, n_2) : \textit{string}, f \cup \{(\textsc{r}, \text{file}(i, g))\}\)}
+\end{prooftree}
+
+\vspace{0.5mm}
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{file\_ref}\,(i, g), f_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{string}, f_2 \)}
+  \RightLabel{\((\emph{file-write})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{write}(e_1, e_2) : \textit{unit}, (f_1 \cup f_2 \cup \{(\textsc{w}, \text{file}(i, g))\}) \)}
+\end{prooftree}
+
+\vspace{0.5mm}
+
+
+\begin{prooftree}
+  \AxiomC{\( \Gamma \vdash e_1 : \textit{file\_ref}\,(i, g), f_1 \)}
+  \AxiomC{\( \Gamma \vdash e_2 : \textit{string}, f_2 \)}
+  \RightLabel{\((\emph{file-append})\)}
+  \BinaryInfC{\(\Gamma \vdash \textrm{append}(e_1, e_2) : \textit{unit}, (f_1 \cup f_2 \cup \{(\textsc{w}, \text{file}(i, g))\}) \)}
+\end{prooftree}
+
+% func-def, func-call, return
+
+\vspace{-2mm}
+
+\begin{prooftree}
+  \AxiomC{\(x_1: \tau_1, \, \ldots \,, x_n : \tau_n, \Gamma \vdash e : \tau, f\)}
+  \AxiomC{\((g: \tau_1 * \cdots * \tau_n \xrightarrow{f} \tau), \Gamma \vdash e^\prime : \tau^\prime, f^\prime\)}
+  \RightLabel{\((\emph{def-func})\)}
+  \BinaryInfC{\(\Gamma \vdash (\textrm{def } g(x_1: \tau_1, \, \ldots \, , x_n: \tau_n) \; \tau \; \{ \, e \, \} ; \, e^\prime) : \tau^\prime, f^\prime \)}
+\end{prooftree}
+
+\begin{prooftree}
+  \AxiomC{\(\Gamma(g) = \tau_1 * \cdots * \tau_n \xrightarrow{f} \tau \)}
+  \AxiomC{\( \Gamma \vdash e_1 : \tau_1, f_1 \)}
+  \AxiomC{\( \hspace{-2.5mm} \cdots \hspace{-2.5mm} \)}
+  \AxiomC{\( \Gamma \vdash e_n : \tau_n, f_n \)}
+  \RightLabel{\((\emph{apply-func})\)}
+  \QuaternaryInfC{\( \Gamma \vdash g(e_1, \ldots, e_n) : \tau, (f \cup f_1 \cup \cdots \cup f_n) \)}
+\end{prooftree}
+
+\vspace{5mm}
+
+\addtocounter{footnote}{-1}
+\addtocounter{footnote}{-1}
+
+\stepcounter{footnote}\footnotetext{All scopes remove local-variable side effects. However,  we only apply this rule to the \( (\emph{blocks}) \) for brevity.}
+\stepcounter{footnote}\footnotetext{Where \( i' \) represents a fresh identifier and \( g' \) represents a fresh group.}

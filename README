@@ -1,0 +1,19 @@
+Recommended Setup
+- VSCode 
+- LaTeX Workshop Plugin (Using TeX Live)
+
+Viewing PDFs is easiest in VSCode, by opening a new VSCode window containing the PDF (which live updates when the LaTeX is changed). 
+Alternatively, the Okular PDF viewer has dark-mode settings for late night dissertation writing sessions. 
+
+In the ./Dissertation folder 
+- The "prooftree.sty" and "tombstone.sty" files are custom LaTeX packages I used, these can be removed once you remove the LaTeX dependent on them 
+- My "preamble.sty" contains lots of extra packages. If you remove the contents of all chapter and appendices files, this file can be replaced with "minimal_preamble.sty"
+- To compile, open "./Dissertation/dissertation.tex" and save the file. This should update the PDF file (and spawn many intermediary compilation files, you can ignore these)
+
+Similarly, the proposal files can be compiled by heading to "./Proposal/Phase_2/Phase_2.tex" and "./Proposal/Phase_3/Phase_3.tex" and saving the files.
+
+Feel free to reuse any LaTeX code found in this project, although be warned it is a little hacky at times. 
+
+Enjoy,
+Dylan :P 
+
