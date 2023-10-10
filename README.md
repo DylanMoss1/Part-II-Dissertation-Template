@@ -17,7 +17,7 @@ Extra files (in `./Dissertation`)
 - The `prooftree.sty` and `tombstone.sty` files are custom LaTeX packages I used. These can be removed once you remove the LaTeX code dependent on them. 
 - My `preamble.sty` contains lots of extra packages. If you remove the contents of all chapter and appendices files, this file can be replaced with `minimal_preamble.sty`.
 
-Feel free to reuse any LaTeX code found in this project, although be warned it is a little hacky at times. 
+Feel free to reuse any LaTeX code in this project, although be warned that it is a little hacky at times. 
 
 Enjoy,
 Dylan :P 
