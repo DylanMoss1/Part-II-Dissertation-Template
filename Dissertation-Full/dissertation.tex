@@ -1,27 +1,19 @@
 \documentclass[12pt,a4paper,twoside,openright]{report}
-\usepackage{preamble} % imported packages/macros/styling
+\usepackage{preamble} % imported packages/macros/styling from preamble.sty
 
-\usepackage[sorting=none]{biblatex} 
-\usepackage[none]{hyphenat}
-\addbibresource{ref.bib}
-
-\newcommand{\colr}[1]{\textcolor{red}{#1}}
-\newcommand{\colb}[1]{\textcolor{blue}{#1}}
-\newcommand{\colv}[1]{\textcolor{violet}{#1}}
+\usepackage[sorting=none]{biblatex} % sorting=none means citations in bibliography appear in the order they are cited  
+\usepackage[none]{hyphenat} % Disables hyphenation for the entire document. Words will no longer be split across multiple lines with hyphens
+\addbibresource{ref.bib} % Add bibliography from ref.bib 
 
 \begin{document}
 
-% Reduce align spacing
-% \setlength{\abovedisplayskip}{8pt}
-% \setlength{\belowdisplayskip}{8pt}
-% \setlength{\abovedisplayshortskip}{8pt}
-% \setlength{\belowdisplayshortskip}{8pt}
+% TC:ignore tells texcount to ignore word count until TC:endignore 
 
 %TC:ignore
 
 % ----------------------------------------------------------------------
 
-% title page 
+% Title page 
 \pagestyle{empty}
 
 \rightline{\LARGE \textbf{Dylan Moss}}
@@ -55,15 +47,16 @@
 \pagenumbering{roman}
 
 
-% declaration of originality
+% Declaration of originality
 \section*{Declaration}
 
+% Check the declaration of originality is up-to-date
 I, Dylan Moss of Queens' College, being a candidate for Part II of the Computer Science Tripos, hereby declare that this dissertation and the work described in it are my own work, unaided except as may be specified below, and that the dissertation does not contain material that has already been used to any substantial extent for a comparable purpose. In preparation of this dissertation I did not use text from AI-assisted platforms generating natural language answers to user queries, including but not limited to ChatGPT. I am content for my dissertation to be made available to the students and staff of the University.
 
 \emph{Signed:} Dylan Moss\\
 \emph{Date:} \today
 
-% proforma
+% Proforma
 \chapter*{Proforma}
  {\large
   \begin{tabular}{ll}
@@ -91,7 +84,7 @@ Exceeded all success criteria and the majority of extensions. Kautuka supports v
 
 None.
 
-% table of contents 
+% Table of contents 
 \tableofcontents
 
 
@@ -101,8 +94,12 @@ None.
 \setcounter{page}{1}
 %TC:endignore
 
+% textcount's word count is now enabled 
 
+
+% Remove code snippets and algorithms from word count 
 %TC:envir minted 1 xall 
+%TC:macro \mintinline [ignore]
 %TC:envir algorithmic 1 xall
 
 % Include tables in word count
@@ -113,7 +110,13 @@ None.
 %TC:macro \footnote [text]
 %TC:macro \footnotetext [text]
 
-% main chapters
+% Word-count hacking... (not recommended)
+%TC:macro \hyperref [ignore]
+%TC:macro \ignore [ignore]
+%TC:macro \path [ignore]
+
+
+% Main chapters
 \addtocontents{lol}{\protect\vspace*{10pt}}
 \chapter{Introduction}
 \input{chapters/introduction.tex}
@@ -130,10 +133,9 @@ None.
 \chapter{Evaluation}
 \input{chapters/evaluation.tex}
 
-
 \addtocontents{lol}{\protect\vspace*{10pt}}
 \chapter{Conclusions}
-\input{chapters/conclusion.tex}
+\input{chapters/conclusions.tex}
 
 
 % ----------------------------------------------------------------------
@@ -183,7 +185,5 @@ None.
 
 \input{chapters/appendices/F_proposal.tex}
 
-
-% don't forget to append the original project proposal
 %TC:endignore
 \end{document}

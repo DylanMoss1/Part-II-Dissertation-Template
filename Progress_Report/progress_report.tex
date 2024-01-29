@@ -1,0 +1,101 @@
+\documentclass[12pt,a4paper,twoside,openright]{report}
+\usepackage{preamble} % imported packages/macros/styling
+
+\usepackage[none]{hyphenat}
+
+\vspace{2mm}
+
+\chapter*{Progress Report}
+
+\begin{document}
+
+{
+\begin{tabular}{ll}
+  Name:          & \bf Dylan Moss                       \\[3pt]
+  Email:         & \bf dm894@cam.ac.uk                  \\[3pt]
+  Project Title: & \bf Automatic Parallelisation using  \\ & \bf Effect Tracking and Cost Analysis \\[3pt]
+  Supervisor:    & \bf Alan Mycroft                     \\[3pt]
+  DoS:           & \bf Ramsey Faragher                  \\[3pt]
+  Overseers:     & \bf Robert Mullins and Marcelo Fiore \\[3pt]
+\end{tabular}
+}
+
+\vspace{5mm}
+
+\subsection*{Summary}
+
+The aim of my project is to create an automatic parallelisation compiler from my custom sequential programming language to parallelised Go code. This is done through side-effect tracking to identify independent blocks of code, and by tracking the size of data types to approximate execution times. I have written 3500 lines of OCaml code and completed three of my five success criteria (designing and parsing my language, implementing side-effect tracking, and producing parallelised Go code), with one more close to completion (implementing cost analysis). I now realise that my final success criterion, a full evaluation of my compiler, seems inappropriate for a progress report (more details in paragraph 3); and so intend to complete a more streamlined evaluation instead. Overall, I am 2--3 weeks behind schedule and intend to complete my success criteria by 14th Feb, giving me enough time to work on my extensions and the evaluation.
+
+Some changes have been made to the original timetable, I set aside some time at the beginning of project to develop a framework, which has aided the development of the rest of the project. This initially set me back three weeks, but the time saved using the frameworks has outweighed this delay. However, there has been one major unexpected difficulty in my project so far. The type inference algorithm I designed for tracking data type sizes required a large amount of manual effort to cover all edge cases. Fortunately, I noticed that incorporating a large part of one of my extensions into the core project early could help solve this problem and save me time overall. I have since successfully implemented this, and taking this into account I am only 1--2 weeks behind schedule.
+
+I have decided to change my final success criterion to be a more streamlined evaluation of the compiler, evaluating the quality of my generated code using synthetic benchmarks. A full evaluation determines whether I have met my success criteria, and so it would be inappropriate to include this in the success criteria list. I will carry out a full evaluation after I have completed some of my extensions, allowing for a richer evaluation as my language will become more expressive.
+
+More details on my project's progress appear on the following page.
+
+\newpage
+
+\subsection*{Details}
+
+The design of my compiler consists of multiple pipeline stages, described in the diagram below. I first designed the syntax for my Go-like custom language and built a lexer and parser for it. Next, I built the framework (described on the previous page), which allowed me to easily complete the \textit{Preparation} stages of the pipeline. This involves identifying the Go standard libraries which need to be imported into the final Go code, and alpha converting all the program variables. I then carried out side-effect tracking for non-local variables  — with added support for tracking console I/O and file system side effects to be included as part of my later extensions. I am currently working on cost analysis, for which I have completed inference for tracking the size of data types, but have yet to use this information to estimate the execution time of code blocks. The final stages of the pipeline, parallelising code blocks and translating the AST into parallelised Go, have already been completed.
+
+\newcommand{\cmark}{\ding{51}}%
+\newcommand{\xmark}{\ding{55}}%
+
+My progress can be represented with the following diagram (\cmark{} Completed, \xmark{} Not Started, \textbf{!} In Progress):
+
+\vspace{3mm}
+
+\definecolor{red_pastel}{HTML}{FFB5B5}
+\definecolor{orange_pastel}{HTML}{FFE5A8}
+\definecolor{yellow_pastel}{HTML}{FAFFA7}
+\definecolor{green_pastel}{HTML}{C7FFB4}
+\definecolor{blue_pastel}{HTML}{BBEAFF}
+\definecolor{light_grey}{HTML}{EAEAEA}
+
+\begin{tikzpicture}[
+    end_point_node/.style={rounded rectangle, draw, fill=light_grey,
+        align=center, text width=2.5cm,
+        minimum height=1cm, inner ysep=2.5mm,
+        inner xsep=4mm},
+    basicnode/.style={draw, text width=2.5cm,
+        align=center, minimum height=1cm, inner xsep=2.5mm, , inner ysep=2.5mm},
+    lexer_parser_node/.style={basicnode, fill=red_pastel},
+    preparation_node/.style={basicnode, fill=orange_pastel},
+    side_effect_node/.style={basicnode, fill=yellow_pastel},
+    cost_analysis_node/.style={basicnode, fill=green_pastel},
+    parallelisation_node/.style={basicnode, fill=blue_pastel}
+  ]
+
+  \node[end_point_node] at (0.2, 0) (kautuka) { Kautuka };
+  \node[lexer_parser_node, label=010:{\cmark}] at (4.6, 0) (lexer_parser) { Lexer + Parser };
+  \draw[-latex] (kautuka) to (lexer_parser);
+  \node[preparation_node, align=center, label=010:{\cmark}] at (8.7, 0) (import) { Identify Go Libraries to Import };
+  \draw[-latex] (lexer_parser) to (import);
+  \node[preparation_node, label=010:{\cmark}] at (12.8, 0) (alpha_conversion) { Alpha Convert Variables };
+  \draw[-latex] (import) to (alpha_conversion);
+  \node[side_effect_node, below=of kautuka, label=010:{\xmark}] at (0.2, -1.09) (file_tracking) { \textbf{[Extn]} Track Disjoint File References };
+  \draw[-latex] (alpha_conversion.east) [rounded corners]-- (15,0) -- (15, -1.5) -- (-2, -1.5) -- (-2, -3) [sharp corners]-- (file_tracking.west);
+  \node[side_effect_node, label=010:{\cmark}] at (4.6, -3) (side_effect_tracking) { Side-Effect Tracking };
+  \draw[-latex] (file_tracking) to (side_effect_tracking);
+  \node[cost_analysis_node, label=010:{\cmark}] at (8.7, -3) (type_cost) { Infer Bounds of Types };
+  \draw[-latex] (side_effect_tracking) to (type_cost);
+  \node[cost_analysis_node, label=010:{\textbf{!}}] at (12.8, -3) (runtime_cost) { Estimate Runtime of Code Blocks };
+  \draw[-latex] (type_cost) to (runtime_cost);
+  \node[parallelisation_node, below=of file_tracking, label=010:{\cmark}] at (0.2, -4.1) (par_benefit) { Re-order and Parallelise Code Blocks };
+  \draw[-latex] (runtime_cost.east) [rounded corners]-- (15, -3) -- (15, -4.5) -- (-2, -4.5) -- (-2, -6) [sharp corners]-- (par_benefit.west);
+  \node[parallelisation_node, label=010:{\cmark}] at (4.6, -6) (go_translator) { Translate to Parallelised Go Code };
+  \draw[-latex] (par_benefit) to (go_translator);
+  \node[end_point_node] at (8.7, -6) (go) { Parallelised Go };
+  \draw[-latex] (go_translator) to (go);
+
+  \matrix [draw, below left, inner xsep=0.9mm, inner ysep=0.095cm] at (15, -4.8) {
+    \node [rounded rectangle, minimum width=0.94cm, xshift=-0.09cm, draw, fill=light_grey, label=right:\scriptsize Program Code] {}; \\[-0.65mm]
+    \node [minimum width=0.75cm, draw, fill=red_pastel, label=right:\scriptsize Lexing and Parsing] {}; \\[-0.65mm]
+    \node [minimum width=0.75cm, draw, fill=orange_pastel, label=right:\scriptsize Preparation] {}; \\[-0.65mm]
+    \node [minimum width=0.75cm, draw, fill=yellow_pastel, label=right:\scriptsize Side-Effect Tracking] {}; \\[-0.65mm]
+    \node [minimum width=0.75cm, draw, fill=green_pastel, label=right:\scriptsize Cost Analysis] {}; \\[-0.65mm]
+    \node [minimum width=0.75cm, draw, fill=blue_pastel, label=right:\scriptsize Parallelisation] {}; \\[-0.65mm]
+  };
+\end{tikzpicture}
+
+\end{document}
