@@ -6,11 +6,11 @@ Contents
 - `Progress-Report`: My mid-project progress report
 - `Proposal`: All stages of my initial project proposal
 
+**Important:** Please make sure to check the up-to-date standards on the department page. Rules regarding dissertation formats and statements may vary year on year.
+
 Recommended Latex Setup
 - VSCode 
 - [LaTeX Workshop Plugin](https://github.com/James-Yu/LaTeX-Workshop) (Using TeX Live)
-
-
 
 Compilation
 - To compile any Latex document, open the relevant `document.tex` file and save it.
