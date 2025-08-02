@@ -15,7 +15,7 @@ Recommended Latex Setup
 Compilation
 - To compile any Latex document, open the relevant `document.tex` file and save it.
 - For example, to compile the main dissertation, open `./Dissertation-Full/dissertation.tex` and save the file. This automatically compiles all Latex sub-files (such as `./Dissertation-Full/chapters/introduction.tex`).  
-- Compiling updates the PDF file (and spawns many intermediary compilation files, which you can ignore).
+- This compilation updates the PDF file (and spawns many intermediary compilation files, which you can ignore).
 
 Viewing PDFs 
 - Viewing PDFs is easiest in VSCode, open a new VSCode window containing the PDF (which live updates as the LaTeX is changed). 
