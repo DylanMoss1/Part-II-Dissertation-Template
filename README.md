@@ -6,7 +6,7 @@ Contents
 - `Progress-Report`: My mid-project progress report
 - `Proposal`: All stages of my initial project proposal
 
-**Important:** Please make sure to check the up-to-date standards on the department page. Rules regarding dissertation formats and statements may vary year on year.
+**Important:** Please make sure to check the department page for the up-to-date dissertation standards.  Rules regarding dissertation formats and declarations may vary year on year.
 
 Recommended Latex Setup
 - VSCode 
